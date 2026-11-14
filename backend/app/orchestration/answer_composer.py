@@ -640,7 +640,13 @@ class AnswerComposer:
 
             title = str(item.get("title") or "")
             filename = str(item.get("filename") or "")
-            searchable = f"{title} {filename} {content}".lower()
+            related_entity_ids = " ".join(
+                str(entity_id)
+                for entity_id in item.get("related_entity_ids", [])
+            )
+            searchable = (
+                f"{title} {filename} {content} {related_entity_ids}"
+            ).lower()
 
             if requested_entities and not any(
                 cls._contains_entity(searchable, entity)
@@ -829,7 +835,8 @@ class AnswerComposer:
                 })
             elif facet == "campaign_observed_drivers":
                 facet_terms.update({
-                    "campaign", "factor", "factors", "investigate",
+                    "campaign", "observed", "driver", "drivers",
+                    "factor", "factors", "investigate",
                     "alignment", "target", "segment", "objective", "channel",
                     "selection", "conversion-oriented", "creative",
                 })

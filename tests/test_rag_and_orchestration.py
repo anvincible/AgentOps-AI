@@ -227,6 +227,9 @@ def test_orchestrator_clarifies_material_sql_ambiguities():
     orchestrator.sql_agent = SimpleNamespace(schema={"tables": {"customers": {"columns": [
         {"column_name": "customer_id"}, {"column_name": "age"},
     ]}}})
+    orchestrator.rag_agent = SimpleNamespace(
+        _explicit_document_type_filter=lambda _question: None
+    )
     assert "calendar year" in orchestrator._clarification_needed("sales last year")
     assert "city, state, or country" in orchestrator._clarification_needed("customers by location")
     assert "quantity sold or by revenue" in orchestrator._clarification_needed("top products")
@@ -393,6 +396,7 @@ from backend.app.orchestration.orchestrator import Orchestrator
         ("What are the return resolutions?", "SQL"),
         ("What strategy was recommended for campaign CMP-021?", "RAG"),
         ("What was the performance of campaign CMP-021?", "SQL"),
+        ("What are the CMP-021 campaign metrics and recommended strategy?", "BOTH"),
         ("What is the NovaMart return and refund policy?", "RAG"),
         (
             "What were the results of campaign CMP-021 and what strategy "
@@ -693,37 +697,36 @@ def test_composer_keeps_chunks_linked_by_entity_metadata():
     evidence = [
         {
             "chunk_id": "DOC-021-001",
-            "document_id": "DOC-021",
+            "document_id": "DOC-MKT-024",
             "title": "Campaign Postmortem",
             "filename": "campaign_postmortem.docx",
             "related_entity_ids": ["CMP-021"],
             "content": (
-                "Campaign facts show strong revenue and conversion "
-                "performance across the reporting period."
+                "Campaign facts show strong revenue and conversion performance."
             ),
             "similarity": 0.8,
         },
         {
             "chunk_id": "DOC-021-002",
-            "document_id": "DOC-021",
+            "document_id": "DOC-MKT-024",
             "title": "Campaign Postmortem",
             "filename": "campaign_postmortem.docx",
             "related_entity_ids": ["CMP-021"],
             "content": (
-                "Observed drivers include target segment alignment, "
-                "channel selection and conversion-oriented creative."
+                "Observed drivers are factors to investigate and include target segment alignment, "
+                "campaign objective, channel selection and conversion-oriented creative."
             ),
             "similarity": 0.7,
         },
         {
             "chunk_id": "DOC-021-003",
-            "document_id": "DOC-021",
+            "document_id": "DOC-MKT-024",
             "title": "Campaign Postmortem",
             "filename": "campaign_postmortem.docx",
             "related_entity_ids": ["CMP-021"],
             "content": (
-                "Future campaigns should compare conversion efficiency, "
-                "customer segment quality and incremental revenue."
+            "Future campaigns should compare conversion efficiency, "
+            "customer segment quality and incremental revenue before increasing spend."
             ),
             "similarity": 0.7,
         },
@@ -731,8 +734,7 @@ def test_composer_keeps_chunks_linked_by_entity_metadata():
 
     selected = AnswerComposer().select_relevant_evidence(
         evidence,
-        "What were the results, observed drivers and recommendations "
-        "for campaign CMP-021?",
+        "Campaign results, observed drivers and recommendations for CMP-021.",
     )
 
     combined_content = " ".join(
@@ -790,7 +792,7 @@ def test_composer_preserves_multiple_relevant_sections_from_one_document():
 
     selected = AnswerComposer().select_relevant_evidence(
         evidence,
-        "Summarize campaign results, observed drivers and recommendations.",
+        "Campaign results, observed drivers and recommendations.",
     )
 
     combined_content = " ".join(

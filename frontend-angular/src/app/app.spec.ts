@@ -200,6 +200,29 @@ describe('App', () => {
     expect(app.messages).toEqual([]);
   });
 
+  it('does not restore clarification state from an older request after a new chat', () => {
+    const { fixture, app } = createApp();
+    app.question = productClarification.original_question;
+    app.sendQuestion();
+    const oldRequest = http.expectOne('/api/ask');
+
+    app.newChat();
+    expect(app.pendingClarification).toBeNull();
+    expect(app.messages).toEqual([]);
+
+    oldRequest.flush({
+      route: 'CLARIFY',
+      answer: productClarification.prompt,
+      clarification: productClarification,
+      verification: { verified: true, route: 'CLARIFY' },
+    });
+    fixture.detectChanges();
+
+    expect(app.pendingClarification).toBeNull();
+    expect(app.messages).toEqual([]);
+    expect(app.loading).toBe(false);
+  });
+
   it('keeps one-shot requests compatible and continues rendering citations and verification', () => {
     const { fixture, app } = createApp();
     app.question = 'What is the NovaMart return and refund policy?';

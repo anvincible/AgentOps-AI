@@ -541,6 +541,7 @@ class Orchestrator:
                 "roi",
                 "return on investment",
                 "performance",
+                "metrics",
                 "results",
                 "compare",
                 "comparison",

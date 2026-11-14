@@ -1,7 +1,7 @@
 # AgentOps AI — NovaMart Intelligent Business Assistant
 
 **Project handoff:** Aashna → Anvi → Aru  
-**Current status:** Core database, RAG, SQL routing/orchestration, API, and a working Angular frontend are implemented. Frontend polish, verification, evaluation, security hardening, and final delivery remain.
+**Current status:** Phases 1–4.4 are implemented and regression-tested; the Phase 4.5 local audit is complete. The Angular chat, supported SQL templates, RAG evidence flow, hybrid answers, clarification flow, and evidence verification are working. Final release readiness still requires a PrimeUI licensing decision and decisions about the explicitly deferred modules and production hardening.
 
 AgentOps AI is a college group project that answers natural-language questions about a fictional e-commerce and marketing business, NovaMart. It uses structured data in PostgreSQL and business documents indexed with embeddings in PostgreSQL/pgvector. A FastAPI backend routes questions to SQL, RAG, or both, then returns an answer to an Angular frontend.
 
@@ -25,7 +25,7 @@ The project repository already contained the project structure, synthetic datase
 - **Angular** frontend connects to FastAPI through the Angular dev-server proxy (`proxy.conf.json`).
 - Document embeddings use the Sentence Transformers model `all-MiniLM-L6-v2` (384 dimensions, stored in pgvector). No paid embedding API is used.
 - A deterministic `VerificationAgent` checks that each answer is backed by SQL rows or retrieved document evidence.
-- Regression tests live in `tests/` (`pytest`); run with `backend\venv\Scripts\python.exe -m pytest` on the current machine.
+- Regression tests live in `tests/` (`pytest`). In this workspace, pytest is not installed in `backend/venv`; Phase 4.5 used the already-present root `.venv` pytest packages with the backend interpreter and did not install dependencies.
 - Assistant responses render Markdown with HTML escaping applied before Markdown conversion.
 - End-to-end SQL and hybrid campaign examples have been demonstrated.
 
@@ -35,8 +35,10 @@ Answers are composed by `AnswerComposer`, a deterministic formatter that turns S
 ### Important limitations to know
 - The SQL reasoner uses deterministic templates for customer, product, sales/order, seller, marketing, support-ticket, payment, shipment, and return analytics. It is not a general natural-language-to-SQL system; see the supported scope below.
 - **Answer generation is deterministic.** No live LLM is used. The `LLMClient` class is present but not wired into the orchestrator.
-- The answer composer is deterministic and formats the current SQL/RAG results; it is not a replacement for a planned verification agent.
-- RAG evidence has sometimes included extracted metadata in displayed content. Clean and retest this before the final demo.
+- Verification checks that SQL claims are reproducible from returned rows, RAG claims and citations match selected excerpts, and hybrid answers use both sources. It is a focused deterministic check, not a general-purpose fact checker, and there is no retry/fallback loop.
+- The Angular Assistant is implemented. Overview, Agent Execution, Data Explorer, Knowledge & Evidence, and Evaluation & Verification are intentionally deferred and display a planned-module page.
+- The current PrimeNG 22 installation requires a genuine PrimeUI license key. No key is configured; the project owner must confirm eligibility and provide an authorized key before configuration. Once authorized, configure it through the `license` option in `providePrimeNG` in `frontend-angular/src/app/app.config.ts`; do not use a placeholder key.
+- The application has no user authentication or audit logging and is not production-hardened.
 - Casual greetings such as "hi" are handled by a dedicated `CHAT` route.
 - Confirm that the current repository's `.env` and configuration are safe before sharing. **Never send real secrets, API keys, or passwords in the handoff.**
 
@@ -102,10 +104,10 @@ Known working versions in the current development environment:
 - Windows 10/11
 - Python 3.12.4 (existing virtual environment at `backend/venv`; Python 3.12 is also the version noted in `agentops_requirements.txt`)
 - PostgreSQL **18.6** with pgvector extension **0.8.6**
-- sentence-transformers 6.1.0 (model `all-MiniLM-L6-v2`), torch 2.14.1
-- psycopg 3.3.6, pydantic 2.14.3, torch 2.15.0
-- Node.js 24.18.0
-- npm 11.16.0
+- sentence-transformers 6.1.0 (model `all-MiniLM-L6-v2`), torch 2.15.0
+- psycopg 3.3.6, pydantic 2.14.3
+- Node.js 26.13.1
+- npm 11.20.0
 - FastAPI 0.141.1
 - Uvicorn 0.53.0
 - **Angular ^22.2.0** with TypeScript ~6.0.2 (the active UI in `frontend-angular/`)
@@ -264,31 +266,26 @@ This is the current working roadmap used for the handoff. The original master sp
 |---|---|---|
 | 1 | Environment and project foundation | Complete |
 | 2 | Synthetic dataset and documents | Complete |
-| 3 | PostgreSQL and pgvector setup | Complete in Anvi's environment; repeat/verify on a new machine |
-| 4 | RAG pipeline | Implemented and ingestion tested |
-| 5 | SQL agent, orchestration, and answer composition | Deterministic templates cover customer, product, sales/order, seller, campaign, support-ticket, payment, shipment, and return analytics; broader free-form analysis remains unsupported |
-| 6 | FastAPI API layer | Implemented and tested |
-| 7 | Angular frontend and API integration | Implemented (Angular dev build); Angular unit tests and production build were not re-run for this update |
-| 8 | Verification/quality-control agent | Implemented as a deterministic evidence check (`verification_agent.py`); no retry/fallback loop |
+| 3 | PostgreSQL and pgvector setup | Complete in the current environment; repeat/verify on a new machine |
+| 4 | RAG pipeline | Implemented; existing index preserved and retrieval/evidence tests pass |
+| 5 | SQL agent, orchestration, and answer composition | Supported deterministic templates implemented; arbitrary natural-language SQL remains unsupported |
+| 6 | FastAPI API layer | Implemented and tested through the Angular proxy |
+| 7 | Angular frontend and API integration | Implemented; component tests and production build pass |
+| 8 | Verification/quality-control agent | Implemented as deterministic evidence checks; no retry/fallback loop |
 | 9 | Business analysis and report generation | Not implemented |
-| 10 | Evaluation framework and metrics | Partial: `pytest` suite (unit + live PostgreSQL integration); `evaluation/` not re-verified |
-| 11 | Security, audit logging, and production hardening | Partial: SELECT-only SQL validation; no audit logging, auth or row limits documented |
-| 12 | End-to-end regression tests, documentation, and final demo/deployment | In progress |
+| 10 | Evaluation framework and metrics | Focused pytest suites and a documented live-proxy verification matrix; no general benchmark runner |
+| 11 | Security, audit logging, and production hardening | Partial: SELECT-only validation and bounded query results; authentication and audit logging remain unimplemented |
+| 12 | End-to-end regression tests, documentation, and final demo/deployment | Local regression and documentation review complete; deployment/demo not performed |
 
 Do not mark a phase complete solely because its folder exists. Run its tests and record the evidence.
 
-## 8. Recommended next tasks for Aru
+## 8. Remaining project work
 
-Work in this order and make small changes with a test after each one:
-
-1. **Reproduce the current setup:** backend health check, frontend load, one SQL query, one RAG query, and one BOTH query.
-2. **Finish Phase 7:** remove metadata clutter from displayed RAG content without corrupting content; handle greetings/fallback questions; improve source display; check mobile layout and error states.
-3. **Implement Phase 8 verification:** validate SQL claims against query results and RAG/hybrid claims against retrieved evidence; add bounded retry/fallback behavior. Preserve source provenance.
-4. **Broaden and validate SQL support carefully:** only add question types that can be tested against the schema and expected answers. Keep database access read-only.
-5. **Implement Phase 9 analysis/reporting:** add supported calculations and report output, clearly stating which features are implemented.
-6. **Build Phase 10 evaluation:** separate routing, SQL, retrieval, hybrid, verification, and end-to-end tests; record correctness and groundedness.
-7. **Complete Phase 11 security:** use read-only DB credentials, validate SQL, add timeouts/row limits, secure secrets, input/output validation, prompt-injection defenses for retrieved documents, and audit logging.
-8. **Finish Phase 12:** clean install instructions, run end-to-end regression tests, document known limitations, and prepare a reliable demo.
+- Confirm PrimeUI Community or Commercial eligibility, then configure a genuine key if authorized.
+- Implement or remove the deferred Overview, Agent Execution, Data Explorer, Knowledge & Evidence, and Evaluation & Verification modules according to product scope.
+- Decide whether business analysis/report generation is in scope.
+- Before production use, add authentication, audit logging, and deployment-specific hardening.
+- Keep the evaluation matrix aligned with any new supported questions and rerun the live proxy checks after backend changes.
 
 ## 9. Useful commands
 
@@ -303,7 +300,8 @@ python -m scripts.test_sql_pipeline
 # Start API
 python -m uvicorn backend.app.api.main:app --host 127.0.0.1 --port 8000
 
-# Full Python test suite (unit tests plus live PostgreSQL tests; DB tests skip if unavailable)
+# Full Python test suite. This workspace reuses the existing root .venv packages.
+$env:PYTHONPATH = "$PWD\.venv\Lib\site-packages;$env:PYTHONPATH"
 .\backend\venv\Scripts\python.exe -m pytest
 
 # Frontend dependencies and dev server
@@ -313,14 +311,10 @@ npm.cmd start
 ```
 
 ## Known limitations
-- SQL reasoning covers defined campaign and returns patterns only; other business questions return an "unsupported" message.
-- Answers are deterministic templates over SQL rows and retrieved text. No LLM writes answers.
-- Auto-routing is keyword/rule based. Use the manual RAG / SQL / BOTH mode to override it.
-- Campaign-ID questions only show documents that mention that ID. Multi-campaign reports are shown only when nothing more specific exists, and are labelled as general context.
-- Evidence excerpts are cut at a character limit and may end mid-sentence.
-- Verification confirms evidence exists; it does not fact-check each claim.
-
-The SQL test commands above passed in Anvi's environment. Run them again after setup or code changes; results may differ on a fresh machine.
+- Routing and query planning are deterministic and template-based; unsupported questions may be clarified or declined.
+- Answers use SQL rows and retrieved text; no live LLM generates answer prose.
+- Evidence is excerpted with length and source limits. Missing facets or unsupported claims remain unverified.
+- The Assistant works locally through the Angular development proxy. Production deployment and visual browser automation were not part of the final local regression run.
 
 ## 10. Handoff rules
 

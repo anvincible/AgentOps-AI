@@ -29,12 +29,25 @@ interface VerificationResult {
   issues?: string[];
 }
 
+interface ClarificationContext {
+  original_question: string;
+  kind: string;
+  options: string[];
+  prompt: string;
+}
+
+interface AskRequest {
+  question: string;
+  clarification_context?: ClarificationContext;
+}
+
 interface AskResponse {
   question?: string;
   route?: string;
   answer?: string;
   sources?: SourceDocument[];
   verification?: VerificationResult;
+  clarification?: ClarificationContext | null;
 }
 
 interface ChatMessage {
@@ -43,6 +56,7 @@ interface ChatMessage {
   route?: string;
   sources?: SourceDocument[];
   verification?: VerificationResult;
+  clarification?: ClarificationContext;
   pending?: boolean;
 }
 
@@ -64,6 +78,8 @@ export class App implements OnInit {
   activePage = 'assistant';
   errorMessage = '';
   messages: ChatMessage[] = [];
+  pendingClarification: ClarificationContext | null = null;
+  private chatGeneration = 0;
 
   readonly suggestions = [
     {
@@ -127,6 +143,17 @@ export class App implements OnInit {
       return;
     }
 
+    const clarificationContext = this.pendingClarification;
+    const shouldSendClarificationContext =
+      clarificationContext !== null &&
+      this.isClarificationReply(question, clarificationContext);
+    this.pendingClarification = null;
+    const request: AskRequest = { question };
+    if (shouldSendClarificationContext && clarificationContext) {
+      request.clarification_context = clarificationContext;
+    }
+    const generation = this.chatGeneration;
+
     this.errorMessage = '';
     this.loading = true;
     this.question = '';
@@ -145,10 +172,13 @@ export class App implements OnInit {
     this.messages.push(assistantMessage);
 
     this.http
-      .post<AskResponse>('/api/ask', { question })
+      .post<AskResponse>('/api/ask', request)
       .pipe(
         timeout(60000),
         finalize(() => {
+          if (generation !== this.chatGeneration) {
+            return;
+          }
           assistantMessage.pending = false;
           this.loading = false;
           this.messages = [...this.messages];
@@ -157,6 +187,9 @@ export class App implements OnInit {
       )
       .subscribe({
         next: (response) => {
+          if (generation !== this.chatGeneration) {
+            return;
+          }
           assistantMessage.content =
             typeof response?.answer === 'string' &&
             response.answer.trim().length > 0
@@ -168,6 +201,16 @@ export class App implements OnInit {
             ? response.sources
             : [];
           assistantMessage.verification = response?.verification;
+          const clarification = response?.clarification;
+          if (
+            response?.route === 'CLARIFY' &&
+            this.isClarificationContext(clarification)
+          ) {
+            assistantMessage.clarification = clarification;
+            this.pendingClarification = clarification;
+          } else {
+            this.pendingClarification = null;
+          }
           assistantMessage.pending = false;
           this.backendOnline = true;
           this.messages = [...this.messages];
@@ -175,6 +218,9 @@ export class App implements OnInit {
         },
 
         error: (error: unknown) => {
+          if (generation !== this.chatGeneration) {
+            return;
+          }
           assistantMessage.content = this.getErrorMessage(error);
           assistantMessage.sources = [];
           assistantMessage.verification = undefined;
@@ -182,17 +228,107 @@ export class App implements OnInit {
 
           if (error instanceof HttpErrorResponse && error.status === 0) {
             this.backendOnline = false;
+            this.messages = this.messages.filter(
+              (message) => message !== assistantMessage,
+            );
             this.errorMessage =
               'Cannot reach the backend. Check that FastAPI and the Angular proxy are running.';
           } else {
             this.backendOnline = true;
-            this.errorMessage = assistantMessage.content;
+            this.errorMessage = '';
           }
 
           this.messages = [...this.messages];
           this.changeDetector.detectChanges();
         },
       });
+  }
+
+  selectClarificationOption(option: string): void {
+    if (
+      this.loading ||
+      !this.pendingClarification?.options.includes(option)
+    ) {
+      return;
+    }
+
+    this.question = `By ${option}`;
+    this.sendQuestion();
+  }
+
+  formatClarificationOption(option: string): string {
+    return option.replace(/\b\w/g, (character) => character.toUpperCase());
+  }
+
+  private isClarificationContext(
+    value: unknown,
+  ): value is ClarificationContext {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const context = value as Partial<ClarificationContext>;
+    return (
+      typeof context.original_question === 'string' &&
+      typeof context.kind === 'string' &&
+      typeof context.prompt === 'string' &&
+      Array.isArray(context.options) &&
+      context.options.every((option) => typeof option === 'string')
+    );
+  }
+
+  private isClarificationReply(
+    reply: string,
+    context: ClarificationContext,
+  ): boolean {
+    const normalized = this.normalizeClarificationText(reply);
+    if (!normalized || normalized.split(' ').length > 6) {
+      return false;
+    }
+
+    const aliases: Record<string, Record<string, string[]>> = {
+      product_ranking_metric: {
+        revenue: ['revenue', 'sales'],
+        quantity: ['quantity', 'units', 'quantity sold', 'units sold'],
+      },
+      customer_distribution_dimension: {
+        segment: ['segment', 'customer segment'],
+        location: ['location', 'locations'],
+        city: ['city'],
+        state: ['state'],
+        country: ['country'],
+        'loyalty tier': ['loyalty', 'loyalty tier'],
+        'acquisition channel': ['acquisition channel', 'channel'],
+      },
+      date_range: {
+        'previous calendar year': [
+          'calendar year',
+          'previous calendar year',
+          'last calendar year',
+        ],
+        'rolling 12 months': ['rolling 12 months', 'rolling year', '12 months'],
+      },
+    };
+
+    const matchesAlias = (alias: string): boolean => {
+      const normalizedAlias = this.normalizeClarificationText(alias);
+      return [
+        normalizedAlias,
+        `by ${normalizedAlias}`,
+        `use ${normalizedAlias}`,
+        `rank by ${normalizedAlias}`,
+        `group by ${normalizedAlias}`,
+      ].includes(normalized);
+    };
+
+    return context.options.some((option) => {
+      const optionAliases = aliases[context.kind]?.[option] ?? [option];
+      return optionAliases.some(matchesAlias);
+    });
+  }
+
+  private normalizeClarificationText(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim().replace(/\s+/g, ' ');
   }
 
   formatMessage(content: string): SafeHtml {
@@ -237,9 +373,11 @@ export class App implements OnInit {
   }
 
   newChat(): void {
+    this.chatGeneration += 1;
     this.messages = [];
     this.question = '';
     this.errorMessage = '';
+    this.pendingClarification = null;
     this.loading = false;
     this.activePage = 'assistant';
   }

@@ -212,7 +212,34 @@
                           <small>Analysing your question...</small>
                         </div>
                       } @else {
-                        <div class="answer-text" [innerHTML]="formatMessage(message.content)"></div>
+                        <div
+                          class="answer-text"
+                          [class.clarification-prompt]="message.route === 'CLARIFY'"
+                          [innerHTML]="formatMessage(message.content)"
+                        ></div>
+                      }
+
+                      @if (
+                        message.route === 'CLARIFY' &&
+                        message.clarification &&
+                        pendingClarification === message.clarification
+                      ) {
+                        <div class="clarification-options" aria-label="Clarification options">
+                          <span>Choose an option or type your answer below.</span>
+                          <div class="clarification-option-list">
+                            @for (option of message.clarification.options; track option) {
+                              <button
+                                class="clarification-option"
+                                type="button"
+                                [disabled]="loading"
+                                [attr.aria-label]="'Answer clarification: ' + option"
+                                (click)="selectClarificationOption(option)"
+                              >
+                                {{ formatClarificationOption(option) }}
+                              </button>
+                            }
+                          </div>
+                        </div>
                       }
 
                       @if (message.sources?.length) {
@@ -251,7 +278,7 @@
                         </div>
                       }
 
-                      @if (message.verification) {
+                      @if (message.verification && message.route !== 'CLARIFY') {
                         <div
                           class="verification-card"
                           [class.verification-pass]="message.verification.verified"

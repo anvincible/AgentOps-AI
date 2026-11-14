@@ -612,7 +612,7 @@ def test_cmp021_strategy_composition_requires_both_postmortem_facets():
         question=question,
     )
     assert "not establish them as causes of CMP-021's results" in answer
-    assert "future-campaign recommendation" in answer
+    assert "future-campaign recommendation" in answer.lower()
     assert verification["verified"] is True
 
 

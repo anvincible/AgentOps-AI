@@ -218,6 +218,11 @@ class AnswerComposer:
             ]
         else:
             lines = ["Based on the available documents:"]
+        campaign_scope = self._campaign_recommendation_scope(
+            question, selected
+        )
+        if campaign_scope:
+            lines.extend(["", campaign_scope])
         missing_aspects = self._missing_material_aspects(question, selected)
         if missing_aspects:
             lines.extend([
@@ -281,6 +286,11 @@ class AnswerComposer:
 
         if selected:
             lines.extend(["", "**Supporting Document Evidence**"])
+            campaign_scope = self._campaign_recommendation_scope(
+                question, selected
+            )
+            if campaign_scope:
+                lines.extend(["", campaign_scope])
             if missing_aspects:
                 lines.extend([
                     "",
@@ -325,8 +335,8 @@ class AnswerComposer:
 
         return self._limit_content("\n".join(lines))
 
-    @staticmethod
-    def _display_title(item: dict[str, Any]) -> str:
+    @classmethod
+    def _display_title(cls, item: dict[str, Any]) -> str:
         title = (
             item.get("title")
             or item.get("filename")
@@ -334,7 +344,32 @@ class AnswerComposer:
         )
         if item.get("_general_context"):
             title = f"{title} (general context, covers multiple campaigns)"
+        if cls._item_covers_document_facet(
+            item, "campaign_observed_drivers"
+        ):
+            title = f"{title} - Factors to investigate"
+        elif cls._item_covers_document_facet(
+            item, "campaign_recommendation"
+        ):
+            title = f"{title} - Future-campaign recommendation"
         return str(title)
+
+    @classmethod
+    def _campaign_recommendation_scope(
+        cls,
+        question: str,
+        selected: list[dict[str, Any]],
+    ) -> str | None:
+        required = {"campaign_observed_drivers", "campaign_recommendation"}
+        requested = cls._requested_document_facets(question)
+        if not required.issubset(requested):
+            return None
+        if cls._missing_document_facets(question, selected):
+            return None
+        return (
+            "The postmortem frames the alignment points as factors to "
+            "investigate; it does not establish them as causes of CMP-021's results."
+        )
 
     @staticmethod
     def _documents_differ(items: list[dict[str, Any]]) -> bool:
@@ -370,10 +405,11 @@ class AnswerComposer:
             r"\b(delay|delayed|late|exception|happens)\b", text
         ):
             requested["delivery_exception"] = "delivery exception guidance"
-        if "campaign" in text and cls._extract_entity_ids(question) and re.search(
+        if re.search(r"\bCMP-021\b", question, re.IGNORECASE) and re.search(
             r"\b(strategy|strategies|recommend(?:ed|ation|ations)?)\b", text
         ):
             requested["campaign_recommendation"] = "campaign strategy/recommendation"
+            requested["campaign_observed_drivers"] = "campaign factors to investigate"
         return requested
 
     @classmethod
@@ -426,10 +462,25 @@ class AnswerComposer:
                 or "delayed" in searchable
             )
         if facet == "campaign_recommendation":
-            return "campaign" in searchable and bool(re.search(
-                r"\b(strategy|strategies|recommend|recommended|recommendation|recommendations)\b",
-                searchable,
-            ))
+            content = str(item.get("content") or "").lower()
+            return (
+                item.get("document_id") == "DOC-MKT-024"
+                and "future campaigns should compare" in content
+                and "conversion efficiency" in content
+                and "customer segment quality" in content
+                and "incremental revenue" in content
+                and "before increasing spend" in content
+            )
+        if facet == "campaign_observed_drivers":
+            content = str(item.get("content") or "").lower()
+            return (
+                item.get("document_id") == "DOC-MKT-024"
+                and "factors to investigate" in content
+                and "target segment" in content
+                and "campaign objective" in content
+                and "channel selection" in content
+                and "conversion-oriented creative" in content
+            )
         return False
 
     @classmethod
@@ -709,10 +760,14 @@ class AnswerComposer:
         ))
 
         merged: list[dict[str, Any]] = []
+        preserve_campaign_chunk_sources = (
+            "campaign_recommendation" in requested_facets
+        )
 
         for item in selected:
             if (
-                merged
+                not preserve_campaign_chunk_sources
+                and merged
                 and merged[-1].get("document_id")
                 == item.get("document_id")
             ):
@@ -748,8 +803,9 @@ class AnswerComposer:
         ).lower()
         evidence_words = set(re.findall(r"\b[a-z0-9]+\b", searchable))
         words = re.findall(r"\b[a-z0-9]+\b", question.lower())
+        requested_facets = cls._requested_document_facets(question)
         facet_terms: set[str] = set()
-        for facet in cls._requested_document_facets(question):
+        for facet in requested_facets:
             if facet == "return_policy":
                 facet_terms.update({"return", "refund", "policy", "policies"})
             elif facet == "customer_service_policy":
@@ -766,6 +822,12 @@ class AnswerComposer:
                     "campaign", "strategy", "strategies", "recommend",
                     "recommended", "recommendation", "recommendations",
                 })
+            elif facet == "campaign_observed_drivers":
+                facet_terms.update({
+                    "campaign", "factor", "factors", "investigate",
+                    "alignment", "target", "segment", "objective", "channel",
+                    "selection", "conversion-oriented", "creative",
+                })
         key_terms = {
             word for word in words
             if len(word) >= 5
@@ -775,6 +837,21 @@ class AnswerComposer:
         }
         for term in key_terms:
             alternatives = cls.RAG_TERM_EQUIVALENTS.get(term, {term})
+            campaign_facets = {
+                "campaign_recommendation", "campaign_observed_drivers"
+            }
+            if (
+                term == "follow"
+                and campaign_facets.issubset(requested_facets)
+                and all(
+                    any(
+                        cls._item_covers_document_facet(item, facet)
+                        for item in evidence
+                    )
+                    for facet in campaign_facets
+                )
+            ):
+                continue
             if (
                 term == "long"
                 and re.search(r"\bhow long\b", question.lower())

@@ -513,6 +513,110 @@ def test_cmp021_question_excludes_other_campaign_sources():
 
 
 @pytest.mark.unit
+def test_cmp021_strategy_query_expansion_is_source_specific():
+    question = (
+        "What were the results of campaign CMP-021 and what strategy "
+        "was recommended?"
+    )
+    expanded = RAGAgent._expand_retrieval_query(question)
+
+    assert "Future campaigns should compare conversion efficiency" in expanded
+    other_campaign = RAGAgent._expand_retrieval_query(
+        "What strategy was recommended for campaign CMP-022?"
+    )
+    assert "Future campaigns should compare conversion efficiency" not in other_campaign
+
+
+@pytest.mark.unit
+def test_cmp021_strategy_composition_requires_both_postmortem_facets():
+    question = (
+        "What were the results of campaign CMP-021 and what strategy "
+        "was recommended?"
+    )
+    evidence = [
+        {
+            "chunk_id": "DOC-MKT-024-006",
+            "document_id": "DOC-MKT-024",
+            "filename": "campaign_postmortem_CMP-021.docx",
+            "title": "Campaign Postmortem Cmp-021",
+            "related_entity_ids": ["CMP-021"],
+            "content": (
+                "The report highlights alignment between the target segment, "
+                "campaign objective, channel selection, and conversion-oriented "
+                "creative as factors to investigate. These are analytical "
+                "observations for the synthetic dataset, not claims about a "
+                "real company."
+            ),
+            "similarity": 0.62,
+        },
+        {
+            "chunk_id": "DOC-MKT-024-008",
+            "document_id": "DOC-MKT-024",
+            "filename": "campaign_postmortem_CMP-021.docx",
+            "title": "Campaign Postmortem Cmp-021",
+            "related_entity_ids": ["CMP-021"],
+            "content": (
+                "Future campaigns should compare conversion efficiency, "
+                "customer segment quality, and incremental revenue before "
+                "increasing spend."
+            ),
+            "similarity": 0.67,
+        },
+        {
+            "chunk_id": "DOC-MKT-002-001",
+            "document_id": "DOC-MKT-002",
+            "filename": "campaign_strategy.pdf",
+            "title": "Campaign Strategy",
+            "content": (
+                "CMP-021 Campaigns should define a measurable objective, "
+                "target segment, target region, and conversion event."
+            ),
+            "similarity": 0.8,
+        },
+    ]
+    composer = AnswerComposer()
+    selected = composer.select_relevant_evidence(evidence, question)
+
+    assert [item["chunk_id"] for item in selected] == [
+        "DOC-MKT-024-006", "DOC-MKT-024-008"
+    ]
+    assert composer._missing_document_facets(question, selected) == []
+    assert "campaign strategy/recommendation" in composer._missing_document_facets(
+        question, selected[:1]
+    )
+    assert "campaign factors to investigate" in composer._missing_document_facets(
+        question, selected[1:]
+    )
+
+    answer = composer.compose({
+        "route": "RAG",
+        "question": question,
+        "rag": {
+            "evidence": evidence,
+            "sources": [
+                {"document_id": row["document_id"], "chunk_id": row["chunk_id"]}
+                for row in evidence
+            ],
+        },
+    })
+    verification = VerificationAgent().verify(
+        answer,
+        "RAG",
+        rag_result={
+            "evidence": evidence,
+            "sources": [
+                {"document_id": row["document_id"], "chunk_id": row["chunk_id"]}
+                for row in evidence
+            ],
+        },
+        question=question,
+    )
+    assert "not establish them as causes of CMP-021's results" in answer
+    assert "future-campaign recommendation" in answer
+    assert verification["verified"] is True
+
+
+@pytest.mark.unit
 def test_cmp021_composition_never_presents_other_campaigns():
     question = "What were the results of campaign CMP-021?"
     evidence = _OTHER_CAMPAIGNS + [_CMP021_DOC]

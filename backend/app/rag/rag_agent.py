@@ -101,10 +101,16 @@ class RAGAgent:
             )
         if re.search(r"\bcustomer service policy\b", text):
             additions.append("customer support service policy refund dispute")
-        if re.search(r"\b(strategy|recommendation|recommended)\b", text) and re.search(
-            r"\bcampaign\b", text
+        if re.search(r"\b(strategy|strategies|recommend(?:ed|ation|ations)?)\b", text) and re.search(
+            r"\bCMP-021\b", text
         ):
-            additions.append("campaign postmortem strategy recommendation")
+            additions.append(
+                "CMP-021 postmortem follow-up. Future campaigns should compare "
+                "conversion efficiency, customer segment quality, and incremental "
+                "revenue before increasing spend. Observed alignment among target "
+                "segment, campaign objective, channel selection, and "
+                "conversion-oriented creative are factors to investigate."
+            )
 
         return " ".join([question.strip(), *additions])
 

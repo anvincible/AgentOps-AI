@@ -495,14 +495,15 @@ class SQLReasoner:
                 "total_clicks",
             ]
         elif (
-            "campaign" in question_lower
+            not campaign_ids
+            and "campaign" in question_lower
             and any(term in question_lower for term in ("performance", "overview"))
             and not re.search(r"\b(top|highest|most|rank|ranking|best)\b", question_lower)
         ):
             intent = "CAMPAIGN_PERFORMANCE"
             columns = [
-                "campaign_id", "campaign_name", "actual_spend",
-                "revenue_generated", "conversions", "clicks",
+                "campaign_count", "total_spend", "total_revenue",
+                "total_conversions", "total_clicks",
             ]
         elif not campaign_ids and "channel" in question_lower:
             return self._analytics_plan(
@@ -515,6 +516,12 @@ class SQLReasoner:
                 )],
                 date_filter=self._extract_date_filter(question_lower),
             )
+        elif (
+            not campaign_ids
+            and re.search(r"\bthe campaign\b", question_lower)
+            and any(term in question_lower for term in ("roi", "revenue", "spend", "conversion", "click"))
+        ):
+            raise ValueError("A campaign ID is required for this campaign question.")
         elif not campaign_ids:
             ranking_requested = bool(re.search(
                 r"\b(top|highest|most|rank|ranking|best)\b", question_lower
@@ -545,8 +552,8 @@ class SQLReasoner:
             elif any(term in question_lower for term in ("performance", "result")):
                 intent = "CAMPAIGN_PERFORMANCE"
                 columns = [
-                    "campaign_id", "campaign_name", "actual_spend",
-                    "revenue_generated", "conversions", "clicks",
+                    "campaign_count", "total_spend", "total_revenue",
+                    "total_conversions", "total_clicks",
                 ]
             else:
                 raise ValueError("Specify campaign metrics, an acquisition channel, or a campaign ID.")

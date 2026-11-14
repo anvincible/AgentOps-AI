@@ -183,6 +183,11 @@ class AnswerComposer:
             note = "Interpretation used: ranked by quantity sold."
         elif intent == "TOP_PRODUCTS_BY_REVENUE":
             note = "Interpretation used: ranked by revenue."
+        elif intent == "CAMPAIGN_PERFORMANCE" and not query_plan.get("entity_id"):
+            note = (
+                "Interpretation used: aggregate overview across all campaigns; "
+                "no ranking applied."
+            )
 
         return f"{note}\n\n{answer}" if note else answer
 

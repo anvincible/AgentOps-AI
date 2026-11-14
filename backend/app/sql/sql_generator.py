@@ -129,7 +129,12 @@ WHERE {where_clause};
     ) -> str | None:
         intent = query_plan.get("intent")
 
-        if intent == "CAMPAIGN_SUMMARY":
+        if intent == "CAMPAIGN_PERFORMANCE" and query_plan.get("filters"):
+            # Keep campaign-ID performance queries on the existing filtered
+            # path below. An unfiltered overview is an aggregate, not a rank.
+            return None
+
+        if intent in {"CAMPAIGN_SUMMARY", "CAMPAIGN_PERFORMANCE"}:
             for column in (
                 "campaign_id",
                 "actual_spend",

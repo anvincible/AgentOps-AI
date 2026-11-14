@@ -71,7 +71,7 @@ class AnswerComposer:
         "the", "this", "to", "what", "when", "where", "which", "who",
         "why", "results", "will", "with", "would", "you",
         "customer", "customers", "recorded", "number", "count",
-        "happens",
+        "happens", "take", "takes",
     }
 
     RAG_TERM_EQUIVALENTS = {
@@ -91,6 +91,9 @@ class AnswerComposer:
         "refunds": {"refund"},
         "disputes": {"dispute"},
         "performed": {"performance", "perform"},
+        "strategy": {"strategy", "recommend", "recommended", "recommendation"},
+        "recommended": {"recommended", "recommend", "recommendation", "strategy"},
+        "recommendation": {"recommendation", "recommended", "recommend", "strategy"},
     }
 
     def compose(self, orchestration_result: dict[str, Any]) -> str:
@@ -367,6 +370,10 @@ class AnswerComposer:
             r"\b(delay|delayed|late|exception|happens)\b", text
         ):
             requested["delivery_exception"] = "delivery exception guidance"
+        if "campaign" in text and cls._extract_entity_ids(question) and re.search(
+            r"\b(strategy|strategies|recommend(?:ed|ation|ations)?)\b", text
+        ):
+            requested["campaign_recommendation"] = "campaign strategy/recommendation"
         return requested
 
     @classmethod
@@ -418,6 +425,11 @@ class AnswerComposer:
                 "exception" in searchable or "delay" in searchable
                 or "delayed" in searchable
             )
+        if facet == "campaign_recommendation":
+            return "campaign" in searchable and bool(re.search(
+                r"\b(strategy|strategies|recommend|recommended|recommendation|recommendations)\b",
+                searchable,
+            ))
         return False
 
     @classmethod
@@ -744,6 +756,16 @@ class AnswerComposer:
                 facet_terms.update({"customer", "customers", "service", "policy", "policies"})
             elif facet == "shipping_policy":
                 facet_terms.update({"shipping", "policy", "policies"})
+            elif facet == "delivery_exception":
+                facet_terms.update({
+                    "delivery", "deliveries", "delay", "delayed", "late",
+                    "exception",
+                })
+            elif facet == "campaign_recommendation":
+                facet_terms.update({
+                    "campaign", "strategy", "strategies", "recommend",
+                    "recommended", "recommendation", "recommendations",
+                })
         key_terms = {
             word for word in words
             if len(word) >= 5

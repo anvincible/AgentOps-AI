@@ -101,6 +101,10 @@ class RAGAgent:
             )
         if re.search(r"\bcustomer service policy\b", text):
             additions.append("customer support service policy refund dispute")
+        if re.search(r"\b(strategy|recommendation|recommended)\b", text) and re.search(
+            r"\bcampaign\b", text
+        ):
+            additions.append("campaign postmortem strategy recommendation")
 
         return " ".join([question.strip(), *additions])
 

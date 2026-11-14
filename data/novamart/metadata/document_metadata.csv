@@ -1,0 +1,37 @@
+document_id,title,document_type,department,date,version,region,related_entity_ids,access_level,source_filename,synthetic
+DOC-MKT-010,Campaign Performance Q1,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,"CMP-007, CMP-012, CMP-034, CMP-021, CMP-037, CMP-025, CMP-029, CMP-003",INTERNAL_SYNTHETIC,documents/marketing/campaign_performance_Q1.pdf,True
+DOC-MKT-011,Campaign Performance Q2,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,"CMP-007, CMP-012, CMP-034, CMP-021, CMP-037, CMP-025, CMP-029, CMP-003",INTERNAL_SYNTHETIC,documents/marketing/campaign_performance_Q2.pdf,True
+DOC-MKT-012,Campaign Performance Q3,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,"CMP-007, CMP-012, CMP-034, CMP-021, CMP-037, CMP-025, CMP-029, CMP-003",INTERNAL_SYNTHETIC,documents/marketing/campaign_performance_Q3.pdf,True
+DOC-MKT-021,Campaign Postmortem Cmp-007,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,CMP-007,INTERNAL_SYNTHETIC,documents/marketing/campaign_postmortem_CMP-007.docx,True
+DOC-MKT-022,Campaign Postmortem Cmp-012,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,CMP-012,INTERNAL_SYNTHETIC,documents/marketing/campaign_postmortem_CMP-012.docx,True
+DOC-MKT-024,Campaign Postmortem Cmp-021,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,CMP-021,INTERNAL_SYNTHETIC,documents/marketing/campaign_postmortem_CMP-021.docx,True
+DOC-MKT-023,Campaign Postmortem Cmp-034,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,CMP-034,INTERNAL_SYNTHETIC,documents/marketing/campaign_postmortem_CMP-034.docx,True
+DOC-MKT-025,Campaign Postmortem Cmp-037,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,CMP-037,INTERNAL_SYNTHETIC,documents/marketing/campaign_postmortem_CMP-037.docx,True
+DOC-MKT-002,Campaign Strategy,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,CMP-021,INTERNAL_SYNTHETIC,documents/marketing/campaign_strategy.pdf,True
+DOC-MKT-030,Customer Segmentation Strategy,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,"CUS-05633, CUS-09028, CUS-05787, CUS-09203, CUS-04834",INTERNAL_SYNTHETIC,documents/marketing/customer_segmentation_strategy.docx,True
+DOC-MKT-032,Lead Conversion Playbook,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/marketing/lead_conversion_playbook.docx,True
+DOC-MKT-031,Marketing Channel Guidelines,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/marketing/marketing_channel_guidelines.pdf,True
+DOC-MKT-001,Marketing Strategy,MARKETING,Marketing / Business Operations,2026-09-01,1.0,ALL,CMP-021,INTERNAL_SYNTHETIC,documents/marketing/marketing_strategy.docx,True
+DOC-OPS-002,Customer Support Sop,OPERATIONS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/operations/customer_support_SOP.docx,True
+DOC-OPS-004,Delivery Exception Sop,OPERATIONS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/operations/delivery_exception_SOP.docx,True
+DOC-OPS-005,Marketing Approval Sop,OPERATIONS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/operations/marketing_approval_SOP.pdf,True
+DOC-OPS-003,Order Escalation Sop,OPERATIONS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/operations/order_escalation_SOP.pdf,True
+DOC-OPS-001,Seller Onboarding Sop,OPERATIONS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/operations/seller_onboarding_SOP.docx,True
+DOC-POL-003,Customer Service Policy,POLICIES,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/policies/customer_service_policy.docx,True
+DOC-POL-006,Discount Promotion Policy,POLICIES,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/policies/discount_promotion_policy.pdf,True
+DOC-POL-005,Loyalty Program Policy,POLICIES,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/policies/loyalty_program_policy.pdf,True
+DOC-POL-001,Return Refund Policy,POLICIES,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/policies/return_refund_policy.pdf,True
+DOC-POL-004,Seller Policy,POLICIES,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/policies/seller_policy.docx,True
+DOC-POL-002,Shipping Policy,POLICIES,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/policies/shipping_policy.pdf,True
+DOC-PRD-001,Product Catalog,PRODUCTS,Marketing / Business Operations,2026-09-01,1.0,ALL,"PROD-00441, PROD-00366, PROD-00495, PROD-01184, PROD-01963, PROD-01683, PROD-00902, PROD-01388, PROD-00489, PROD-01711, PROD-01231, PROD-00698, PROD-01497, PROD-01349, PROD-01279, PROD-01068, PROD-00834, PROD-00084, PROD-00715, PROD-00492, PROD-01632, PROD-00188, PROD-00070, PROD-00673, PROD-00551, PROD-00014, PROD-01978, PROD-00978, PROD-00777, PROD-00812",INTERNAL_SYNTHETIC,documents/products/product_catalog.pdf,True
+DOC-PRD-002,Product Category Guide,PRODUCTS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/products/product_category_guide.docx,True
+DOC-PRD-004,Product Comparison Guide,PRODUCTS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/products/product_comparison_guide.docx,True
+DOC-PRD-003,Warranty Guide,PRODUCTS,Marketing / Business Operations,2026-09-01,1.0,ALL,"PROD-00441, PROD-00366, PROD-00495, PROD-01184, PROD-01963, PROD-01683, PROD-00902, PROD-01388, PROD-00489, PROD-01711",INTERNAL_SYNTHETIC,documents/products/warranty_guide.pdf,True
+DOC-RPT-001,Annual Business Report,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,"CMP-003, CMP-005, CMP-007, CMP-012, CMP-021, CMP-023, CMP-025, CMP-029, CMP-034, CMP-037",INTERNAL_SYNTHETIC,documents/reports/annual_business_report.pdf,True
+DOC-RPT-010,Quarterly Business Review Q1,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,"CMP-007, CMP-012, CMP-003, CMP-005, CMP-006",INTERNAL_SYNTHETIC,documents/reports/quarterly_business_review_Q1.docx,True
+DOC-RPT-011,Quarterly Business Review Q2,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,"CMP-034, CMP-021, CMP-025, CMP-029, CMP-023",INTERNAL_SYNTHETIC,documents/reports/quarterly_business_review_Q2.docx,True
+DOC-RPT-012,Quarterly Business Review Q3,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,"CMP-037, CMP-038, CMP-049, CMP-045, CMP-036",INTERNAL_SYNTHETIC,documents/reports/quarterly_business_review_Q3.docx,True
+DOC-RPT-REG-East,Regional Performance East,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/reports/regional_performance_east.pdf,True
+DOC-RPT-REG-North,Regional Performance North,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/reports/regional_performance_north.pdf,True
+DOC-RPT-REG-South,Regional Performance South,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/reports/regional_performance_south.pdf,True
+DOC-RPT-REG-West,Regional Performance West,REPORTS,Marketing / Business Operations,2026-09-01,1.0,ALL,,INTERNAL_SYNTHETIC,documents/reports/regional_performance_west.pdf,True

@@ -1,0 +1,24 @@
+{
+  "dataset_name": "AgentOps AI \u2014 NovaMart Synthetic Enterprise Dataset",
+  "synthetic": true,
+  "seed": 20260927,
+  "company": "NovaMart",
+  "purpose": "Final-year academic project / AgentOps AI RAG-SQL-Hybrid evaluation",
+  "tables": {
+    "customers": 10000,
+    "sellers": 500,
+    "products": 2000,
+    "marketing_campaigns": 50,
+    "leads": 15000,
+    "marketing_events": 50000,
+    "orders": 50000,
+    "order_items": 125202,
+    "payments": 50000,
+    "shipments": 50000,
+    "returns": 3585,
+    "support_tickets": 9970
+  },
+  "documents": 36,
+  "evaluation_questions": 36,
+  "integrity_checks_passed": true
+}

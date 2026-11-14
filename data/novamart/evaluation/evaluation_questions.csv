@@ -1,0 +1,37 @@
+question_id,question,expected_route,expected_sql_tables,expected_documents,expected_answer_evidence
+EVAL-ROUTE-001,What does the return policy say about damaged products?,DOCUMENT_ONLY,,DOC-POL-001,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-ROUTE-002,Which campaign generated the highest revenue?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-ROUTE-003,Which campaign generated the highest revenue and why was it successful according to the campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-ROUTE-004,Which customer segment generated the most revenue?,SQL_ONLY,"orders,customers",,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-ROUTE-005,What factors does the customer segmentation strategy recommend for Premium customers?,DOCUMENT_ONLY,,DOC-MKT-030,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-ROUTE-006,Which regions had the highest sales and what does the regional report identify as possible reasons?,HYBRID,orders,DOC-RPT-REG-East;DOC-RPT-REG-North;DOC-RPT-REG-South;DOC-RPT-REG-West,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-001,How much revenue did campaign CMP-007 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-002,How much revenue did campaign CMP-012 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-003,How much revenue did campaign CMP-034 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-004,How much revenue did campaign CMP-021 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-005,How much revenue did campaign CMP-037 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-006,How much revenue did campaign CMP-025 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-007,How much revenue did campaign CMP-029 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-008,How much revenue did campaign CMP-003 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-009,How much revenue did campaign CMP-005 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-SQL-010,How much revenue did campaign CMP-023 generate?,SQL_ONLY,marketing_campaigns,,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-001,What warranty duration is listed for product PROD-00441?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-002,What warranty duration is listed for product PROD-00366?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-003,What warranty duration is listed for product PROD-00495?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-004,What warranty duration is listed for product PROD-01184?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-005,What warranty duration is listed for product PROD-01963?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-006,What warranty duration is listed for product PROD-01683?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-007,What warranty duration is listed for product PROD-00902?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-008,What warranty duration is listed for product PROD-01388?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-009,What warranty duration is listed for product PROD-00489?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-RAG-010,What warranty duration is listed for product PROD-01711?,DOCUMENT_ONLY,,DOC-PRD-001;DOC-PRD-003,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-001,Why should campaign CMP-007's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-002,Why should campaign CMP-012's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-003,Why should campaign CMP-034's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-004,Why should campaign CMP-021's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-005,Why should campaign CMP-037's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-006,Why should campaign CMP-025's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-007,Why should campaign CMP-029's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-008,Why should campaign CMP-003's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-009,Why should campaign CMP-005's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-010,Synthetic ground truth; verify against generated records and referenced documents.
+EVAL-HYB-010,Why should campaign CMP-023's performance be examined using both revenue and its campaign report?,HYBRID,marketing_campaigns,DOC-MKT-011,Synthetic ground truth; verify against generated records and referenced documents.

@@ -1,0 +1,19 @@
+{
+  "customers_unique": true,
+  "sellers_unique": true,
+  "products_unique": true,
+  "campaigns_unique": true,
+  "orders_unique": true,
+  "order_items_unique": true,
+  "order_customer_fks": true,
+  "product_seller_fks": true,
+  "item_order_fks": true,
+  "item_product_fks": true,
+  "payment_order_fks": true,
+  "shipment_order_fks": true,
+  "return_order_fks": true,
+  "return_item_fks": true,
+  "ticket_customer_fks": true,
+  "lead_campaign_fks": true,
+  "event_campaign_fks": true
+}

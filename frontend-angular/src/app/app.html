@@ -1,0 +1,415 @@
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="#" (click)="$event.preventDefault(); newChat()">
+      <span class="brand-mark">
+        <i class="pi pi-sparkles"></i>
+      </span>
+      <span class="brand-copy">
+        <strong>AgentOps<span>-AI</span></strong>
+        <small>NovaMart Intelligence</small>
+      </span>
+    </a>
+
+    <div class="workspace-label">WORKSPACE</div>
+
+    <nav class="navigation" aria-label="Main navigation">
+      <button
+        class="nav-item"
+        [class.active]="activePage === 'overview'"
+        (click)="setPage('overview')"
+      >
+        <i class="pi pi-th-large"></i>
+        <span>Overview</span>
+      </button>
+
+      <button
+        class="nav-item"
+        [class.active]="activePage === 'assistant'"
+        (click)="setPage('assistant')"
+      >
+        <i class="pi pi-comments"></i>
+        <span>AI Assistant</span>
+        <span class="nav-indicator"></span>
+      </button>
+
+      <button
+        class="nav-item"
+        [class.active]="activePage === 'traces'"
+        (click)="setPage('traces')"
+      >
+        <i class="pi pi-share-alt"></i>
+        <span>Agent Execution</span>
+      </button>
+
+      <button
+        class="nav-item"
+        [class.active]="activePage === 'data'"
+        (click)="setPage('data')"
+      >
+        <i class="pi pi-database"></i>
+        <span>Data Explorer</span>
+      </button>
+
+      <button
+        class="nav-item"
+        [class.active]="activePage === 'evidence'"
+        (click)="setPage('evidence')"
+      >
+        <i class="pi pi-folder-open"></i>
+        <span>Knowledge & Evidence</span>
+      </button>
+
+      <button
+        class="nav-item"
+        [class.active]="activePage === 'evaluation'"
+        (click)="setPage('evaluation')"
+      >
+        <i class="pi pi-shield"></i>
+        <span>Evaluation & Verification</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="help-card">
+        <div class="help-icon"><i class="pi pi-lightbulb"></i></div>
+        <strong>Need a starting point?</strong>
+        <p>Ask a business question to explore NovaMart data and documents.</p>
+        <button (click)="newChat()">Start a conversation <i class="pi pi-arrow-right"></i></button>
+      </div>
+
+      <div class="profile">
+        <div class="avatar">N</div>
+        <div class="profile-copy">
+          <strong>NovaMart Team</strong>
+          <small>Workspace member</small>
+        </div>
+        <i class="pi pi-ellipsis-h profile-menu"></i>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main-area">
+    <header class="topbar">
+      <div class="breadcrumbs">
+        <span>NovaMart</span>
+        <i class="pi pi-angle-right"></i>
+        <strong>{{ currentPageTitle }}</strong>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="connection-status">
+          <span
+            class="status-dot"
+            [class.online]="backendOnline === true"
+            [class.offline]="backendOnline === false"
+          ></span>
+          <span>
+            @if (backendOnline === true) {
+              API connected
+            } @else if (backendOnline === false) {
+              API unavailable
+            } @else {
+              Checking API
+            }
+          </span>
+        </div>
+
+        <span class="topbar-divider"></span>
+
+        <button
+          class="icon-button"
+          aria-label="Start a new chat"
+          title="New conversation"
+          (click)="newChat()"
+        >
+          <i class="pi pi-plus"></i>
+        </button>
+      </div>
+    </header>
+
+    @if (activePage === 'assistant') {
+      <section class="assistant-page">
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow"><span></span> NOVAMART INTELLIGENCE</div>
+            <h1>AI Assistant</h1>
+            <p>Ask questions. Discover insights. Make informed decisions.</p>
+          </div>
+
+          <button class="secondary-button" (click)="newChat()">
+            <i class="pi pi-plus"></i> New conversation
+          </button>
+        </div>
+
+        <div class="chat-layout">
+          <section class="chat-panel">
+            @if (messages.length === 0) {
+              <div class="welcome-state">
+                <div class="welcome-icon">
+                  <i class="pi pi-sparkles"></i>
+                </div>
+
+                <div class="welcome-pill">
+                  <span class="status-dot online"></span>
+                  Your business intelligence workspace
+                </div>
+
+                <h2>What would you like<br />to <span>understand today?</span></h2>
+                <p class="welcome-description">
+                  Ask NovaMart AI about business performance, company policies,
+                  operational data, and supporting evidence.
+                </p>
+
+                <div class="suggestion-grid">
+                  @for (suggestion of suggestions; track suggestion.title) {
+                    <button
+                      class="suggestion-card"
+                      (click)="selectSuggestion(suggestion)"
+                    >
+                      <span class="suggestion-icon">
+                        <i [class]="suggestion.icon"></i>
+                      </span>
+                      <span class="suggestion-content">
+                        <strong>{{ suggestion.title }}</strong>
+                        <small>{{ suggestion.description }}</small>
+                        <span class="suggestion-prompt">{{ suggestion.prompt }}</span>
+                      </span>
+                      <i class="pi pi-arrow-up-right suggestion-arrow"></i>
+                    </button>
+                  }
+                </div>
+              </div>
+            } @else {
+              <div class="conversation">
+                <div class="conversation-label">
+                  <span>CONVERSATION</span>
+                  <button (click)="newChat()"><i class="pi pi-plus"></i> New chat</button>
+                </div>
+
+                @for (message of messages; track trackMessage($index)) {
+                  <article
+                    class="message"
+                    [class.user-message]="message.role === 'user'"
+                    [class.assistant-message]="message.role === 'assistant'"
+                  >
+                    @if (message.role === 'assistant') {
+                      <div class="message-avatar">
+                        <i class="pi pi-sparkles"></i>
+                      </div>
+                    }
+
+                    <div class="message-body">
+                      <div class="message-author">
+                        {{ message.role === 'user' ? 'You' : 'NovaMart AI' }}
+                        @if (message.route) {
+                          <span class="route-tag">{{ message.route }}</span>
+                        }
+                      </div>
+
+                      @if (message.pending) {
+                        <div class="thinking">
+                          <span></span><span></span><span></span>
+                          <small>Analysing your question...</small>
+                        </div>
+                      } @else {
+                        <div class="answer-text" [innerHTML]="formatMessage(message.content)"></div>
+                      }
+
+                      @if (message.sources?.length) {
+                        <div class="evidence-section">
+                          <div class="section-heading">
+                            <i class="pi pi-file-check"></i>
+                            <strong>Sources & evidence</strong>
+                            <span>{{ message.sources?.length }}</span>
+                          </div>
+
+                          @for (source of message.sources; track trackSource($index, source)) {
+                            <div class="source-card">
+                              <div class="source-icon">
+                                @if (source.type === 'sql') {
+                                  <i class="pi pi-database"></i>
+                                } @else {
+                                  <i class="pi pi-file-pdf"></i>
+                                }
+                              </div>
+                              <div class="source-copy">
+                                <strong>{{ source.title || 'Supporting document' }}</strong>
+                                <small>
+                                  {{ source.filename || source.document_id || 'Document source' }}
+                                </small>
+                                <small>
+                                  @if (source.page_number != null) {
+                                    Page {{ source.page_number }}
+                                  }
+                                  @if (source.chunk_id) {
+                                    · {{ source.chunk_id }}
+                                  }
+                                </small>
+                              </div>
+                            </div>
+                          }
+                        </div>
+                      }
+
+                      @if (message.verification) {
+                        <div
+                          class="verification-card"
+                          [class.verification-pass]="message.verification.verified"
+                          [class.verification-review]="!message.verification.verified"
+                        >
+                          <div class="verification-title">
+                            <i
+                              class="pi"
+                              [class.pi-check-circle]="message.verification.verified"
+                              [class.pi-exclamation-circle]="!message.verification.verified"
+                            ></i>
+                            <strong>Verification checks</strong>
+                            <span>
+                              {{ message.verification.verified ? 'Basic checks passed' : 'Needs review' }}
+                            </span>
+                          </div>
+
+                          <p class="verification-note">
+                            This status reflects the checks performed by the backend;
+                            it is not, by itself, proof of factual correctness.
+                          </p>
+
+                          @if (message.verification.checks?.length) {
+                            <ul>
+                              @for (check of message.verification.checks; track check) {
+                                <li>{{ check }}</li>
+                              }
+                            </ul>
+                          }
+
+                          @if (message.verification.issues?.length) {
+                            <div class="verification-issues">
+                              @for (issue of message.verification.issues; track issue) {
+                                <p><i class="pi pi-exclamation-triangle"></i> {{ issue }}</p>
+                              }
+                            </div>
+                          }
+                        </div>
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
+            }
+
+            @if (errorMessage) {
+              <div class="error-banner">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>{{ errorMessage }}</span>
+                @if (backendOnline === false) {
+                  <button (click)="checkBackend()">Check connection</button>
+                }
+              </div>
+            }
+
+            <form class="composer" (ngSubmit)="sendQuestion()">
+              <textarea
+                name="question"
+                [(ngModel)]="question"
+                placeholder="Ask anything about NovaMart..."
+                rows="2"
+                [disabled]="loading"
+                (keydown.enter)="onEnter($event)"
+                aria-label="Ask NovaMart AI a question"
+              ></textarea>
+
+              <div class="composer-toolbar">
+               <div class="composer-actions">
+                  <span class="enter-hint">Enter to send</span>
+                  <button
+                    class="send-button"
+                    type="submit"
+                    [disabled]="loading || !question.trim()"
+                    aria-label="Send question"
+                  >
+                    @if (loading) {
+                      <i class="pi pi-spin pi-spinner"></i>
+                    } @else {
+                      <i class="pi pi-arrow-up"></i>
+                    }
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <div class="disclaimer">
+              <i class="pi pi-info-circle"></i>
+              AI-generated answers can be incomplete. Check the supporting evidence.
+            </div>
+          </section>
+
+          <aside class="right-rail">
+            <div class="rail-card">
+              <div class="rail-card-heading">
+                <div class="rail-heading-icon"><i class="pi pi-compass"></i></div>
+                <div>
+                  <strong>How it works</strong>
+                  <small>Your query, routed to the right capability</small>
+                </div>
+              </div>
+
+              <div class="mode-explainer">
+                <span class="mode-symbol rag-symbol"><i class="pi pi-file"></i></span>
+                <div>
+                  <strong>RAG</strong>
+                  <p>Search relevant documents and policy evidence.</p>
+                </div>
+              </div>
+
+              <div class="mode-explainer">
+                <span class="mode-symbol sql-symbol"><i class="pi pi-database"></i></span>
+                <div>
+                  <strong>SQL</strong>
+                  <p>Answer questions using structured business data.</p>
+                </div>
+              </div>
+
+              <div class="mode-explainer">
+                <span class="mode-symbol both-symbol"><i class="pi pi-share-alt"></i></span>
+                <div>
+                  <strong>BOTH</strong>
+                  <p>Combine document evidence and database results.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="rail-card trust-card">
+              <div class="rail-heading-icon trust-icon"><i class="pi pi-shield"></i></div>
+              <strong>Evidence matters</strong>
+              <p>
+                Review source documents and the verification checks returned
+                with each answer.
+              </p>
+              <div class="trust-footer">
+                <i class="pi pi-lock"></i>
+                <span>Use only authorised project data</span>
+              </div>
+            </div>
+
+            <div class="rail-footer">
+              <span class="rail-footer-dot"></span>
+              AgentOps-AI · Development environment
+            </div>
+          </aside>
+        </div>
+      </section>
+    } @else {
+      <section class="placeholder-page">
+        <div class="placeholder-icon"><i class="pi pi-wrench"></i></div>
+        <h1>{{ currentPageTitle }}</h1>
+        <p>
+          This module is planned for a later implementation phase.
+          The AI Assistant is available now.
+        </p>
+        <button class="primary-button" (click)="setPage('assistant')">
+          <i class="pi pi-comments"></i> Go to AI Assistant
+        </button>
+      </section>
+    }
+  </main>
+</div>

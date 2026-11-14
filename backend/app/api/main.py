@@ -1,0 +1,141 @@
+
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from backend.app.database_config import load_database_config
+from backend.app.orchestration.orchestrator import Orchestrator
+
+
+app = FastAPI(
+    title="AgentOps AI",
+    description="NovaMart AI Agent API",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4200",
+        "http://127.0.0.1:4200",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class QuestionRequest(BaseModel):
+    question: str
+
+
+class Source(BaseModel):
+    type: str
+    title: str | None = None
+    document_id: str | None = None
+    filename: str | None = None
+    document_type: str | None = None
+    page_number: int | None = None
+    paragraph_number: int | None = None
+    chunk_id: str | None = None
+
+
+class QuestionResponse(BaseModel):
+    question: str
+    route: str
+    answer: str
+    sources: list[Source]
+    verification: dict[str, Any] | None = None
+
+
+orchestrator = Orchestrator(**load_database_config())
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "AgentOps AI",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {
+        "status": "ok",
+        "service": "AgentOps AI",
+    }
+
+
+@app.post("/ask", response_model=QuestionResponse)
+def ask_question(
+    request: QuestionRequest,
+) -> dict[str, Any]:
+
+    if not request.question.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Question cannot be empty.",
+        )
+
+    try:
+        result = orchestrator.answer(request.question)
+
+        sources = []
+
+        # SQL source
+        if "sql" in result:
+            sources.append({
+                "type": "sql",
+                "title": "NovaMart PostgreSQL database",
+            })
+
+        # RAG sources: expose only evidence selected by AnswerComposer.
+        if "rag" in result:
+            rag_result = result["rag"]
+            evidence = rag_result.get("evidence", [])
+
+            selected_evidence = (
+                orchestrator.answer_composer.select_relevant_evidence(
+                    evidence,
+                    result["question"],
+                )
+            )
+
+            for item in selected_evidence:
+                sources.append({
+                    "type": "document",
+                    "document_id": item.get("document_id"),
+                    "filename": item.get("filename"),
+                    "title": item.get("title"),
+                    "document_type": item.get("document_type"),
+                    "page_number": item.get("page_number"),
+                    "paragraph_number": item.get("paragraph_number"),
+                    "chunk_id": item.get("chunk_id"),
+                })
+
+        return {
+            "question": result["question"],
+            "route": result["route"],
+            "answer": result["answer"],
+            "sources": sources or result.get("sources", []),
+            "verification": result.get("verification"),
+        }
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process question: {exc}",
+        ) from exc

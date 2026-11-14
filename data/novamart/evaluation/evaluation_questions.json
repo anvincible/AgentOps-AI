@@ -1,0 +1,290 @@
+[
+  {
+    "question_id": "EVAL-ROUTE-001",
+    "question": "What does the return policy say about damaged products?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-POL-001",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-ROUTE-002",
+    "question": "Which campaign generated the highest revenue?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-ROUTE-003",
+    "question": "Which campaign generated the highest revenue and why was it successful according to the campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-ROUTE-004",
+    "question": "Which customer segment generated the most revenue?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "orders,customers",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-ROUTE-005",
+    "question": "What factors does the customer segmentation strategy recommend for Premium customers?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-MKT-030",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-ROUTE-006",
+    "question": "Which regions had the highest sales and what does the regional report identify as possible reasons?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "orders",
+    "expected_documents": "DOC-RPT-REG-East;DOC-RPT-REG-North;DOC-RPT-REG-South;DOC-RPT-REG-West",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-001",
+    "question": "How much revenue did campaign CMP-007 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-002",
+    "question": "How much revenue did campaign CMP-012 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-003",
+    "question": "How much revenue did campaign CMP-034 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-004",
+    "question": "How much revenue did campaign CMP-021 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-005",
+    "question": "How much revenue did campaign CMP-037 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-006",
+    "question": "How much revenue did campaign CMP-025 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-007",
+    "question": "How much revenue did campaign CMP-029 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-008",
+    "question": "How much revenue did campaign CMP-003 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-009",
+    "question": "How much revenue did campaign CMP-005 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-SQL-010",
+    "question": "How much revenue did campaign CMP-023 generate?",
+    "expected_route": "SQL_ONLY",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-001",
+    "question": "What warranty duration is listed for product PROD-00441?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-002",
+    "question": "What warranty duration is listed for product PROD-00366?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-003",
+    "question": "What warranty duration is listed for product PROD-00495?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-004",
+    "question": "What warranty duration is listed for product PROD-01184?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-005",
+    "question": "What warranty duration is listed for product PROD-01963?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-006",
+    "question": "What warranty duration is listed for product PROD-01683?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-007",
+    "question": "What warranty duration is listed for product PROD-00902?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-008",
+    "question": "What warranty duration is listed for product PROD-01388?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-009",
+    "question": "What warranty duration is listed for product PROD-00489?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-RAG-010",
+    "question": "What warranty duration is listed for product PROD-01711?",
+    "expected_route": "DOCUMENT_ONLY",
+    "expected_sql_tables": "",
+    "expected_documents": "DOC-PRD-001;DOC-PRD-003",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-001",
+    "question": "Why should campaign CMP-007's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-002",
+    "question": "Why should campaign CMP-012's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-003",
+    "question": "Why should campaign CMP-034's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-004",
+    "question": "Why should campaign CMP-021's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-005",
+    "question": "Why should campaign CMP-037's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-006",
+    "question": "Why should campaign CMP-025's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-007",
+    "question": "Why should campaign CMP-029's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-008",
+    "question": "Why should campaign CMP-003's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-009",
+    "question": "Why should campaign CMP-005's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-010",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  },
+  {
+    "question_id": "EVAL-HYB-010",
+    "question": "Why should campaign CMP-023's performance be examined using both revenue and its campaign report?",
+    "expected_route": "HYBRID",
+    "expected_sql_tables": "marketing_campaigns",
+    "expected_documents": "DOC-MKT-011",
+    "expected_answer_evidence": "Synthetic ground truth; verify against generated records and referenced documents."
+  }
+]

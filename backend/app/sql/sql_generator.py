@@ -31,6 +31,10 @@ class SQLGenerator:
         """Generate a deterministic query and any bound parameter values."""
         if query_plan.get("entity_type") == "analytics":
             return self._generate_analytics_sql(query_plan)
+        if query_plan.get("entity_type") == "customer":
+            return self._generate_customer_query(query_plan)
+        if query_plan.get("entity_type") == "product":
+            return self._generate_product_query(query_plan)
         return self.generate_sql(query_plan), ()
 
     def generate_sql(self, query_plan: dict[str, Any]) -> str:
@@ -64,10 +68,10 @@ class SQLGenerator:
             return self._generate_return_sql(query_plan)
 
         if query_plan.get("entity_type") == "customer":
-            return self._generate_customer_sql(query_plan)
+            return self._generate_customer_query(query_plan)[0]
 
         if query_plan.get("entity_type") == "product":
-            return self._generate_product_sql(query_plan)
+            return self._generate_product_query(query_plan)[0]
 
         if query_plan.get("entity_type") == "campaign":
             campaign_sql = self._generate_campaign_sql(query_plan)
@@ -223,12 +227,51 @@ LIMIT 10;
         return None
 
     def _generate_customer_sql(self, query_plan: dict[str, Any]) -> str:
+        return self._generate_customer_query(query_plan)[0]
+
+    def _parameterized_date_filter(
+        self,
+        date_filter: dict[str, int] | None,
+        table: str,
+        alias: str,
+        column: str,
+    ) -> tuple[str, tuple[Any, ...]]:
+        if not date_filter:
+            return "", ()
+        self._validate_table(table)
+        self._validate_column(table, column)
+        if "start_year" in date_filter:
+            start = int(date_filter["start_year"])
+            end = int(date_filter.get("end_year", start))
+            if start < 2000 or end < start or end > 2100:
+                raise ValueError("Date year range is outside the supported range.")
+            return (
+                f"{alias}.{column} >= %s AND {alias}.{column} < %s",
+                (date(start, 1, 1), date(end + 1, 1, 1)),
+            )
+        if "last_days" in date_filter:
+            days = int(date_filter["last_days"])
+            if not 1 <= days <= 3650:
+                raise ValueError("Date range must be between 1 and 3650 days.")
+            return (
+                f"{alias}.{column} >= CURRENT_DATE - (%s * INTERVAL '1 day')",
+                (days,),
+            )
+        raise ValueError("Unsupported date filter.")
+
+    def _generate_customer_query(
+        self, query_plan: dict[str, Any]
+    ) -> tuple[str, tuple[Any, ...]]:
         if query_plan.get("intent") != "CUSTOMER_COUNT":
             raise ValueError(
                 f"Unsupported customer query intent: {query_plan.get('intent')}"
             )
         self._validate_column("customers", "customer_id")
-        return "SELECT COUNT(*) AS customer_count FROM customers;"
+        where, params = self._parameterized_date_filter(
+            query_plan.get("date_filter"), "customers", "c", "registration_date"
+        )
+        sql = f"SELECT COUNT(*) AS customer_count FROM customers AS c {f'WHERE {where}' if where else ''};"
+        return sql, params
 
     def _generate_product_sql(self, query_plan: dict[str, Any]) -> str:
         intent = query_plan.get("intent")
@@ -259,6 +302,27 @@ GROUP BY p.product_id, p.product_name
 ORDER BY {alias} DESC, p.product_name
 LIMIT 10;
 """.strip()
+
+    def _generate_product_query(
+        self, query_plan: dict[str, Any]
+    ) -> tuple[str, tuple[Any, ...]]:
+        sql = self._generate_product_sql(query_plan)
+        date_filter = query_plan.get("date_filter")
+        if not date_filter:
+            return sql, ()
+        self._validate_column("order_items", "order_id")
+        self._validate_column("orders", "order_id")
+        where, params = self._parameterized_date_filter(
+            date_filter, "orders", "o", "order_date"
+        )
+        sql = sql.replace(
+            "JOIN order_items AS oi ON oi.product_id = p.product_id",
+            "JOIN order_items AS oi ON oi.product_id = p.product_id\n"
+            "JOIN orders AS o ON o.order_id = oi.order_id",
+            1,
+        )
+        sql = sql.replace("GROUP BY", f"WHERE {where}\nGROUP BY", 1)
+        return sql, params
 
     def _generate_analytics_sql(
         self, query_plan: dict[str, Any]
@@ -314,14 +378,27 @@ LIMIT 100;
 """
             return sql.strip(), tuple(params)
 
-        if intent in {"CUSTOMER_LTV_SUMMARY", "CUSTOMER_LTV_BY_SEGMENT"}:
+        if intent == "CUSTOMER_STATUS_COUNT":
+            status_value = query_plan.get("status_value")
+            if status_value not in {"ACTIVE", "NOT_ACTIVE"}:
+                raise ValueError("Unsupported customer status filter.")
+            validate("customers", "customer_id", "status")
+            if status_value == "NOT_ACTIVE":
+                sql = "SELECT COUNT(*) AS customer_count FROM customers WHERE status <> %s;"
+                return sql, ("ACTIVE",)
+            sql = "SELECT COUNT(*) AS customer_count FROM customers WHERE status = %s;"
+            return sql, (status_value,)
+
+        if intent in {"CUSTOMER_LTV_SUMMARY", "CUSTOMER_LTV_BY_SEGMENT", "CUSTOMER_LTV_BY_DIMENSION"}:
             validate("customers", "customer_id", "lifetime_value")
-            by_segment = intent == "CUSTOMER_LTV_BY_SEGMENT"
-            if by_segment:
-                validate("customers", "customer_segment")
-                select = "c.customer_segment,"
-                group = "GROUP BY c.customer_segment"
-                order = "c.customer_segment"
+            ltv_dimension = query_plan.get("dimension")
+            if intent != "CUSTOMER_LTV_SUMMARY":
+                if ltv_dimension not in {"customer_segment", "city", "country", "loyalty_tier", "acquisition_channel"}:
+                    raise ValueError("Unsupported lifetime value grouping.")
+                validate("customers", ltv_dimension)
+                select = f"c.{ltv_dimension},"
+                group = f"GROUP BY c.{ltv_dimension}"
+                order = f"c.{ltv_dimension}"
             else:
                 select, group, order = "", "", "average_lifetime_value DESC"
             where = date_clause("customers", "c", "registration_date")
@@ -333,6 +410,23 @@ FROM customers AS c
 {where_line(where)}
 {group}
 ORDER BY {order};
+"""
+            return sql.strip(), tuple(params)
+
+        if intent == "CUSTOMER_REVENUE_BY_SEGMENT":
+            validate("customers", "customer_id", "customer_segment")
+            validate("orders", "order_id", "customer_id", "order_date", "total_amount")
+            where = date_clause("orders", "o", "order_date")
+            sql = f"""
+SELECT c.customer_segment, COUNT(DISTINCT c.customer_id) AS customer_count,
+       COUNT(o.order_id) AS order_count,
+       ROUND(SUM(o.total_amount), 2) AS total_revenue,
+       ROUND(AVG(o.total_amount), 2) AS average_order_value
+FROM customers AS c
+JOIN orders AS o ON o.customer_id = c.customer_id
+{where_line(where)}
+GROUP BY c.customer_segment
+ORDER BY total_revenue DESC;
 """
             return sql.strip(), tuple(params)
 

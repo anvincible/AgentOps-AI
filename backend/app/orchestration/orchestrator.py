@@ -52,6 +52,22 @@ class Orchestrator:
         if not question or not question.strip():
             raise ValueError("Question cannot be empty.")
 
+        clarification = self._clarification_needed(question)
+        if clarification:
+            answer = clarification
+            verification = self.verification_agent.verify(
+                answer=answer,
+                route="CLARIFY",
+                question=question,
+            )
+            return {
+                "question": question,
+                "route": "CLARIFY",
+                "answer": answer,
+                "sources": [],
+                "verification": verification,
+            }
+
         route = self._route_question(question)
 
         # Handle greetings without querying SQL or retrieving documents.
@@ -66,6 +82,7 @@ class Orchestrator:
             verification = self.verification_agent.verify(
                 answer=chat_answer,
                 route="CHAT",
+                question=question,
             )
 
             return {
@@ -116,6 +133,7 @@ class Orchestrator:
                 answer=unsupported_answer,
                 route="SQL",
                 sql_result=None,
+                question=question,
             )
 
             return {
@@ -151,9 +169,60 @@ class Orchestrator:
             route=route,
             sql_result=response.get("sql"),
             rag_result=response.get("rag"),
+            question=question,
         )
 
         return response
+
+    def _clarification_needed(self, question: str) -> str | None:
+        text = re.sub(r"\s+", " ", question.lower()).strip()
+        if re.search(r"\b(age|gender|income)\b", text):
+            requested = re.search(r"\b(age|gender|income)\b", text).group(1)
+            customer_columns = {
+                column.get("column_name")
+                for column in self.sql_agent.schema.get("tables", {})
+                .get("customers", {})
+                .get("columns", [])
+            }
+            supported_customer_groupings = {
+                "customer_segment", "city", "state", "country",
+                "loyalty_tier", "acquisition_channel", "status",
+            }
+            if requested not in customer_columns or requested not in supported_customer_groupings:
+                reason = (
+                    "is present in the database, but isn't supported by the "
+                    "current analytics templates"
+                    if requested in customer_columns
+                    else "is not present in the live customers table"
+                )
+                return (
+                    f"The {requested} field {reason}. "
+                    "Would you like a supported grouping such as "
+                    "segment, city, state, country, or loyalty tier?"
+                )
+        if re.search(r"\b(last|previous) year\b", text):
+            return (
+                "Do you mean the previous calendar year or the rolling "
+                "12 months?"
+            )
+        if (
+            re.search(r"\b(customer|customers)\b.*\b(location|locations)\b", text)
+            and not re.search(r"\b(city|state|country)\b", text)
+        ):
+            return "Which location grouping should I use: city, state, or country?"
+        if (
+            re.search(r"\b(top|best|highest|rank|ranking)\b.*\bproducts?\b", text)
+            and not re.search(
+                r"\b(revenue|sales|quantity|units|sold|price)\b", text
+            )
+        ):
+            return "Should I rank products by quantity sold or by revenue?"
+        if (
+            re.search(r"\b(top|best|highest|rank|ranking)\b.*\bsellers?\b", text)
+            and not re.search(r"\b(revenue|sales|orders|quantity|units)\b", text)
+        ):
+            return "Should I rank sellers by revenue, order count, or units sold?"
+        return None
 
     @staticmethod
     def _contains_term(question: str, terms: set[str]) -> bool:
@@ -384,6 +453,16 @@ class Orchestrator:
         return_database_question = (
             "return" in text or "returns" in text
         )
+
+        return_policy_detail = bool(re.search(
+            r"\b(return|refund)\s+(window|timeline|timeframe|eligibility|eligible)\b",
+            text,
+        ))
+
+        if return_policy_detail and not Orchestrator._contains_term(
+            text, {"count", "rate", "reasons", "status", "resolution", "trends"}
+        ):
+            return "RAG"
 
         if return_database_question:
             return "SQL"

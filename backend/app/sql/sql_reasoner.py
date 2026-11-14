@@ -131,14 +131,47 @@ class SQLReasoner:
         self, question: str, question_lower: str
     ) -> dict[str, Any]:
         if "lifetime value" in question_lower or "ltv" in question_lower:
-            by_segment = "segment" in question_lower
+            dimension = self._dimension_from_question(
+                question_lower,
+                {"segment": "customer_segment", "city": "city", "country": "country", "loyalty tier": "loyalty_tier", "acquisition channel": "acquisition_channel"},
+            )
+            by_segment = dimension == "customer_segment"
             return self._analytics_plan(
                 question,
-                "CUSTOMER_LTV_BY_SEGMENT" if by_segment else "CUSTOMER_LTV_SUMMARY",
+                "CUSTOMER_LTV_BY_SEGMENT" if by_segment else "CUSTOMER_LTV_BY_DIMENSION" if dimension else "CUSTOMER_LTV_SUMMARY",
                 ["customers"],
                 [("customers", "customer_id"), ("customers", "lifetime_value")]
-                + ([ ("customers", "customer_segment") ] if by_segment else []),
-                dimension="customer_segment" if by_segment else None,
+                + ([("customers", dimension)] if dimension else []),
+                dimension=dimension,
+                date_filter=self._extract_date_filter(question_lower),
+            )
+
+        has_active = bool(re.search(r"\bactive\b", question_lower))
+        has_inactive = bool(re.search(r"\binactive\b", question_lower))
+        if has_active != has_inactive:
+            return self._analytics_plan(
+                question,
+                "CUSTOMER_STATUS_COUNT",
+                ["customers"],
+                [("customers", "customer_id"), ("customers", "status")],
+                status_value="ACTIVE" if has_active else "NOT_ACTIVE",
+            )
+        if has_active and has_inactive:
+            return self._analytics_plan(
+                question,
+                "CUSTOMER_DISTRIBUTION",
+                ["customers"],
+                [("customers", "customer_id"), ("customers", "status")],
+                dimension="status",
+            )
+
+        if "segment" in question_lower and any(term in question_lower for term in ("revenue", "sales")):
+            return self._analytics_plan(
+                question,
+                "CUSTOMER_REVENUE_BY_SEGMENT",
+                ["customers", "orders"],
+                [("customers", "customer_id"), ("customers", "customer_segment"), ("orders", "order_id"), ("orders", "customer_id"), ("orders", "order_date"), ("orders", "total_amount")],
+                dimension="customer_segment",
                 date_filter=self._extract_date_filter(question_lower),
             )
 
@@ -146,6 +179,7 @@ class SQLReasoner:
             question_lower,
             {
                 "segment": "customer_segment",
+                "location": "city",
                 "city": "city",
                 "country": "country",
                 "state": "state",
@@ -345,7 +379,7 @@ class SQLReasoner:
         has_grouping = bool(
             re.search(
                 r"\b(?:by|per|distribution|breakdown|segment|city|state|country|"
-                r"loyalty|channel|status)\b",
+                r"loyalty|channel|status|active|inactive)\b",
                 question_lower,
             )
         )
@@ -355,6 +389,10 @@ class SQLReasoner:
         table = "customers"
         self._validate_table(table)
         self._validate_column(table, "customer_id")
+        question_lower = question.lower()
+        date_filter = self._extract_date_filter(question_lower)
+        if date_filter:
+            self._validate_column(table, "registration_date")
         return {
             "question": question,
             "intent": "CUSTOMER_COUNT",
@@ -365,6 +403,7 @@ class SQLReasoner:
             "operation": "SELECT",
             "columns": ["customer_count"],
             "filters": [],
+            "date_filter": date_filter,
         }
 
     @staticmethod
@@ -392,8 +431,13 @@ class SQLReasoner:
 
         by_revenue = any(
             term in question_lower
-            for term in ("revenue", "sales value", "sales amount")
+            for term in ("revenue", "sales value", "sales amount", "sales")
         )
+        date_filter = self._extract_date_filter(question_lower)
+        if date_filter:
+            self._validate_table("orders")
+            self._validate_column("orders", "order_id")
+            self._validate_column("orders", "order_date")
         return {
             "question": question,
             "intent": (
@@ -403,10 +447,11 @@ class SQLReasoner:
             "entity_type": "product",
             "entity_id": None,
             "table": "products",
-            "tables": ["products", "order_items"],
+            "tables": ["products", "order_items"] + (["orders"] if date_filter else []),
             "operation": "SELECT",
             "columns": ["product_name", "total_revenue" if by_revenue else "units_sold"],
             "filters": [],
+            "date_filter": date_filter,
         }
 
     def _reason_campaign(

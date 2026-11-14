@@ -60,6 +60,27 @@ class AnswerComposer:
         },
     }
 
+    RAG_QUERY_STOP_WORDS = {
+        "according", "about", "above", "after", "again", "also", "among",
+        "and", "are", "around", "based", "can", "campaign", "could", "describe",
+        "details", "did", "does", "document", "documents", "explain", "for", "from",
+        "give", "how", "information", "include", "is", "it", "me", "need",
+        "novamart", "of", "on", "or", "performance", "performed", "please", "policy", "policies",
+        "related", "regarding", "say", "says", "should", "show", "tell",
+        "the", "this", "to", "what", "when", "where", "which", "who",
+        "why", "results", "will", "with", "would", "you",
+    }
+
+    RAG_TERM_EQUIVALENTS = {
+        "timeline": {"window", "days", "within", "refund"},
+        "service": {"support", "service"},
+        "defective": {"damaged", "quality", "defect"},
+        "returns": {"return"},
+        "refunds": {"refund"},
+        "disputes": {"dispute"},
+        "performed": {"performance", "perform"},
+    }
+
     def compose(self, orchestration_result: dict[str, Any]) -> str:
         if not orchestration_result:
             return "I could not generate an answer."
@@ -68,8 +89,10 @@ class AnswerComposer:
         question = orchestration_result.get("question", "")
 
         if route == "SQL":
+            sql_result = orchestration_result.get("sql", {})
             return self._compose_sql(
-                orchestration_result.get("sql", {})
+                sql_result,
+                sql_result.get("query_plan", {}),
             )
 
         if route == "RAG":
@@ -79,15 +102,23 @@ class AnswerComposer:
             )
 
         if route == "BOTH":
-            return self._compose_both(
-                orchestration_result.get("sql", {}),
+            sql_result = orchestration_result.get("sql", {})
+            answer = self._compose_both(
+                sql_result,
                 orchestration_result.get("rag", {}),
                 question,
+            )
+            return self._with_interpretation(
+                answer, sql_result.get("query_plan", {})
             )
 
         return "I could not determine how to answer this question."
 
-    def _compose_sql(self, sql_result: dict[str, Any]) -> str:
+    def _compose_sql(
+        self,
+        sql_result: dict[str, Any],
+        query_plan: dict[str, Any] | None = None,
+    ) -> str:
         result = sql_result.get("result", {})
         rows = result.get("rows", [])
         columns = result.get("columns", [])
@@ -105,7 +136,40 @@ class AnswerComposer:
                 formatted = self._format_value(column, value)
                 lines.append(f"- **{label}:** {formatted}")
 
-        return "\n".join(lines)
+        return self._with_interpretation("\n".join(lines), query_plan or {})
+
+    @staticmethod
+    def _with_interpretation(
+        answer: str, query_plan: dict[str, Any]
+    ) -> str:
+        """State deterministic interpretations that affect SQL results."""
+        intent = query_plan.get("intent", "")
+        date_filter = query_plan.get("date_filter") or {}
+        note = None
+        if "start_year" in date_filter:
+            first = date_filter["start_year"]
+            last = date_filter.get("end_year", first)
+            note = (
+                f"Interpretation used: calendar year {first}."
+                if first == last
+                else f"Interpretation used: calendar years {first} through {last}."
+            )
+        elif "last_days" in date_filter:
+            note = (
+                "Interpretation used: the rolling trailing "
+                f"{date_filter['last_days']} days ending today."
+            )
+        elif intent == "CUSTOMER_STATUS_COUNT" and query_plan.get("status_value") == "NOT_ACTIVE":
+            note = (
+                "Interpretation used: inactive means any customer whose "
+                "status is not ACTIVE (including DORMANT and CLOSED)."
+            )
+        elif intent == "TOP_PRODUCTS_BY_QUANTITY":
+            note = "Interpretation used: ranked by quantity sold."
+        elif intent == "TOP_PRODUCTS_BY_REVENUE":
+            note = "Interpretation used: ranked by revenue."
+
+        return f"{note}\n\n{answer}" if note else answer
 
     def _compose_rag(
         self,
@@ -336,6 +400,8 @@ class AnswerComposer:
 
         requested_entities = cls._extract_entity_ids(question)
         topic_terms = cls._detect_topic_terms(question)
+        if not cls._question_aspects_covered(question, evidence):
+            return []
         candidates = []
 
         for item in evidence:
@@ -451,6 +517,39 @@ class AnswerComposer:
             )
 
         return merged
+
+    @classmethod
+    def _question_aspects_covered(
+        cls,
+        question: str,
+        evidence: list[dict[str, Any]],
+    ) -> bool:
+        """Require concrete question terms to appear in retrieved excerpts."""
+        entities = set(cls._extract_entity_ids(question))
+        searchable = " ".join(
+            " ".join(str(item.get(field) or "") for field in (
+                "title", "filename", "content", "related_entity_ids"
+            ))
+            for item in evidence
+        ).lower()
+        evidence_words = set(re.findall(r"\b[a-z0-9]+\b", searchable))
+        words = re.findall(r"\b[a-z0-9]+\b", question.lower())
+        key_terms = {
+            word for word in words
+            if len(word) >= 5
+            and word not in cls.RAG_QUERY_STOP_WORDS
+            and not any(word in entity.lower() for entity in entities)
+        }
+        for term in key_terms:
+            alternatives = cls.RAG_TERM_EQUIVALENTS.get(term, {term})
+            if not any(
+                alt in evidence_words
+                or (alt.endswith("s") and alt[:-1] in evidence_words)
+                or (alt + "s" in evidence_words)
+                for alt in alternatives
+            ):
+                return False
+        return bool(key_terms) or bool(evidence)
 
     @classmethod
     def _detect_topic_terms(cls, question: str) -> set[str]:

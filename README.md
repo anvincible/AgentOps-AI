@@ -33,7 +33,7 @@ The project repository already contained the project structure, synthetic datase
 Answers are composed by `AnswerComposer`, a deterministic formatter that turns SQL result rows and retrieved RAG evidence into readable text. There is **no live LLM in the answer path**. The `LLMClient` class exists in `backend/app/llm/llm_client.py` but is not invoked by the orchestrator; it requires an OpenAI API key and account credits that are not configured. Do not promise live LLM-generated answers.
 
 ### Important limitations to know
-- The SQL reasoner uses deterministic templates for campaign and return analytics, customer counts, and product sales rankings. It is not a general natural-language-to-SQL system. A generic question such as "How many orders were placed?" remains unsupported.
+- The SQL reasoner uses deterministic templates for customer, product, sales/order, seller, marketing, support-ticket, payment, shipment, and return analytics. It is not a general natural-language-to-SQL system; see the supported scope below.
 - **Answer generation is deterministic.** No live LLM is used. The `LLMClient` class is present but not wired into the orchestrator.
 - The answer composer is deterministic and formats the current SQL/RAG results; it is not a replacement for a planned verification agent.
 - RAG evidence has sometimes included extracted metadata in displayed content. Clean and retest this before the final demo.
@@ -224,17 +224,17 @@ Expected route: `SQL`. Returns the total return count, total order count, and th
 
 ## 5b. Current structured SQL scope
 
-Implemented deterministic questions include campaign metrics and comparisons, return counts/rates/reasons/status/resolutions/trends, total customer count, top 10 products by units sold, and top 10 products by item revenue. Product rankings join `products` to `order_items` by `product_id`; category-guide document counts are not used as sales data. The customer and product templates were added in the current development milestone and still need to be exercised against the application after restarting the backend.
+The current deterministic SQL templates cover customer counts and distributions by segment, location, loyalty tier, status, and acquisition channel; lifetime value summaries and segment comparisons; product rankings, category/brand distributions, inventory, low stock, price, and ratings; sales totals, average order value, monthly/region/category/product/channel summaries, and order statuses; seller counts and performance; campaign rankings, ROI, comparisons, and event-channel metrics; support-ticket breakdowns; and payment and shipment breakdowns. Templates use live-schema checks, the existing SELECT-only validator, parameterized year/day and stock-threshold filters, explicit joins, and bounded result counts. Product sales rankings join `products` to `order_items` by `product_id` and never substitute document counts for sales data.
+
+Representative questions from these templates were exercised through the existing Angular `/api/ask` proxy against the live database, alongside customer count, top product rankings, CMP-021, return metrics, and the return-policy RAG query.
 
 Questions that are NOT supported:
+- "Show leads by conversion stage": lead-stage aggregation has no dedicated template
+- Free-form SQL and arbitrary compound field filters
 
-The SQL reasoner supports only defined query patterns. It is not an arbitrary business-SQL generator. Generated SQL is always checked by `SQLValidator` (SELECT-only, single statement, real tables and columns; derived aliases such as `return_count` are accepted). Examples that fail gracefully (with a clear unsupported-query message) include:
+The SQL reasoner supports only defined query patterns. It is not an arbitrary business-SQL generator. Generated SQL is always checked by `SQLValidator` (SELECT-only, single statement, real tables and columns; derived aliases such as `return_count` are accepted). Lead-stage analytics, arbitrary field-value filters, and combinations without a dedicated template remain unsupported and should return a structured-data limitation response.
 
-- "How many orders were placed?" — generic order aggregation
-- "Which customer segment generated the most revenue?" — cross-table aggregation
-- "Which regions had the highest sales?" — aggregation outside the supported scope
 
-Do not demo these as supported SQL questions.
 
 ## 6. API contract
 
@@ -266,7 +266,7 @@ This is the current working roadmap used for the handoff. The original master sp
 | 2 | Synthetic dataset and documents | Complete |
 | 3 | PostgreSQL and pgvector setup | Complete in Anvi's environment; repeat/verify on a new machine |
 | 4 | RAG pipeline | Implemented and ingestion tested |
-| 5 | SQL agent, orchestration, and answer composition | Implemented with campaign and return analytics, plus customer counts and top product rankings by units or revenue; broader analytics remain |
+| 5 | SQL agent, orchestration, and answer composition | Deterministic templates cover customer, product, sales/order, seller, campaign, support-ticket, payment, shipment, and return analytics; broader free-form analysis remains unsupported |
 | 6 | FastAPI API layer | Implemented and tested |
 | 7 | Angular frontend and API integration | Implemented (Angular dev build); Angular unit tests and production build were not re-run for this update |
 | 8 | Verification/quality-control agent | Implemented as a deterministic evidence check (`verification_agent.py`); no retry/fallback loop |

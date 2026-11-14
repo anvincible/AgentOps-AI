@@ -98,11 +98,16 @@ def test_answer_composition_formats_sql_and_rag_evidence():
 @pytest.mark.unit
 def test_verification_requires_route_evidence():
     verifier = VerificationAgent()
-
+    composer = AnswerComposer()
+    sql_result = {
+        "validation": {"valid": True},
+        "query_plan": {"intent": "CUSTOMER_COUNT"},
+        "result": {"columns": ["customer_count"], "rows": [[12]]},
+    }
     verified = verifier.verify(
-        "Revenue was reported.",
+        composer.compose({"route": "SQL", "sql": sql_result}),
         "SQL",
-        sql_result={"result": {"rows": [["CMP-021"]]}}
+        sql_result=sql_result,
     )
     unverified = verifier.verify(
         "Revenue was reported.",
@@ -113,6 +118,119 @@ def test_verification_requires_route_evidence():
     assert verified["verified"] is True
     assert unverified["verified"] is False
     assert "document evidence" in unverified["issues"][0]
+
+
+@pytest.mark.unit
+def test_verifier_rejects_sql_claim_not_in_rows():
+    verifier = VerificationAgent()
+    sql_result = {
+        "validation": {"valid": True},
+        "query_plan": {"intent": "CUSTOMER_COUNT"},
+        "result": {"columns": ["customer_count"], "rows": [[12]]},
+    }
+    result = verifier.verify(
+        "Here is what I found:\n- **Customers:** 120",
+        "SQL",
+        sql_result=sql_result,
+    )
+    assert result["verified"] is False
+    assert "not reproduced from returned rows" in result["issues"][0]
+
+
+@pytest.mark.unit
+def test_verifier_checks_ranking_order_and_metric():
+    verifier = VerificationAgent()
+    sql_result = {
+        "sql": "SELECT product_name, units_sold FROM products ORDER BY units_sold DESC;",
+        "validation": {"valid": True},
+        "query_plan": {"intent": "TOP_PRODUCTS_BY_QUANTITY"},
+        "result": {
+            "columns": ["product_name", "units_sold"],
+            "rows": [["Product A", 2], ["Product B", 9]],
+        },
+    }
+    answer = AnswerComposer().compose({"route": "SQL", "sql": sql_result})
+    result = verifier.verify(answer, "SQL", sql_result=sql_result)
+    assert result["verified"] is False
+    assert "not ordered by the expected metric" in result["issues"][-1]
+
+
+@pytest.mark.unit
+def test_verifier_rejects_rag_claim_outside_retrieved_excerpt():
+    verifier = VerificationAgent()
+    evidence = {
+        "question": "What does the return policy say about refunds?",
+        "evidence": [{
+            "document_id": "DOC-1",
+            "chunk_id": "DOC-1-001",
+            "title": "Return Policy",
+            "filename": "return_policy.pdf",
+            "content": "Refunds are issued after returned items pass the inspection process.",
+        }],
+        "sources": [{"document_id": "DOC-1", "chunk_id": "DOC-1-001"}],
+    }
+    result = verifier.verify(
+        "The refund is guaranteed within five days.",
+        "RAG",
+        rag_result=evidence,
+        question=evidence["question"],
+    )
+    assert result["verified"] is False
+    assert "not reproduced from retrieved excerpts" in result["issues"][0]
+
+
+@pytest.mark.unit
+def test_verifier_requires_retrieved_source_reference():
+    verifier = VerificationAgent()
+    evidence = {
+        "evidence": [{
+            "document_id": "DOC-1",
+            "chunk_id": "DOC-1-001",
+            "title": "Return Policy",
+            "filename": "return_policy.pdf",
+            "content": "Refunds are issued after returned items pass the inspection process.",
+        }],
+        "sources": [{"document_id": "DOC-2", "chunk_id": "DOC-2-004"}],
+    }
+    answer = AnswerComposer().compose({
+        "route": "RAG",
+        "question": "What does the return policy say?",
+        "rag": evidence,
+    })
+    result = verifier.verify(answer, "RAG", rag_result=evidence, question="What does the return policy say?")
+    assert result["verified"] is False
+    assert "does not match retrieved source metadata" in result["issues"][0]
+
+
+@pytest.mark.unit
+def test_rag_selection_rejects_uncovered_specific_question_aspect():
+    evidence = [{
+        "document_id": "DOC-1",
+        "chunk_id": "DOC-1-001",
+        "title": "Return Policy",
+        "filename": "return_policy.pdf",
+        "content": "Refunds are issued after returned items pass the inspection process.",
+    }]
+    selected = AnswerComposer.select_relevant_evidence(
+        evidence,
+        "What does the policy say about interplanetary refunds?",
+    )
+    assert selected == []
+
+
+@pytest.mark.unit
+def test_orchestrator_clarifies_material_sql_ambiguities():
+    from types import SimpleNamespace
+    from backend.app.orchestration.orchestrator import Orchestrator
+
+    orchestrator = object.__new__(Orchestrator)
+    orchestrator.sql_agent = SimpleNamespace(schema={"tables": {"customers": {"columns": [
+        {"column_name": "customer_id"}, {"column_name": "age"},
+    ]}}})
+    assert "calendar year" in orchestrator._clarification_needed("sales last year")
+    assert "city, state, or country" in orchestrator._clarification_needed("customers by location")
+    assert "quantity sold or by revenue" in orchestrator._clarification_needed("top products")
+    assert "is present in the database" in orchestrator._clarification_needed("customers by age")
 
 
 # ---------------------------------------------------------------------------

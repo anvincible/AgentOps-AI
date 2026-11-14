@@ -410,7 +410,8 @@ class SQLReasoner:
     def _is_product_ranking_question(question_lower: str) -> bool:
         ranking_terms = (
             "top", "best-selling", "best selling", "top-selling",
-            "top selling", "most sold", "selling",
+            "top selling", "most sold", "selling", "performed best",
+            "highest", "rank", "ranking",
         )
         return "product" in question_lower and any(
             term in question_lower for term in ranking_terms
@@ -493,6 +494,16 @@ class SQLReasoner:
                 "total_conversions",
                 "total_clicks",
             ]
+        elif (
+            "campaign" in question_lower
+            and any(term in question_lower for term in ("performance", "overview"))
+            and not re.search(r"\b(top|highest|most|rank|ranking|best)\b", question_lower)
+        ):
+            intent = "CAMPAIGN_PERFORMANCE"
+            columns = [
+                "campaign_id", "campaign_name", "actual_spend",
+                "revenue_generated", "conversions", "clicks",
+            ]
         elif not campaign_ids and "channel" in question_lower:
             return self._analytics_plan(
                 question,
@@ -505,10 +516,23 @@ class SQLReasoner:
                 date_filter=self._extract_date_filter(question_lower),
             )
         elif not campaign_ids:
+            ranking_requested = bool(re.search(
+                r"\b(top|highest|most|rank|ranking|best)\b", question_lower
+            ))
             if "roi" in question_lower or "return on investment" in question_lower:
                 intent = "CAMPAIGN_RANKING"
                 campaign_metric = "roi_percent"
-            elif any(term in question_lower for term in ("conversion", "click", "spend", "revenue", "performance", "result", "top", "highest", "most")):
+            elif ranking_requested and any(term in question_lower for term in ("conversion", "click", "spend", "revenue")):
+                intent = "CAMPAIGN_RANKING"
+                if "conversion" in question_lower:
+                    campaign_metric = "conversions"
+                elif "click" in question_lower:
+                    campaign_metric = "clicks"
+                elif "spend" in question_lower:
+                    campaign_metric = "actual_spend"
+                elif "revenue" in question_lower:
+                    campaign_metric = "revenue_generated"
+            elif any(term in question_lower for term in ("conversion", "click", "spend", "revenue")):
                 intent = "CAMPAIGN_RANKING"
                 if "conversion" in question_lower:
                     campaign_metric = "conversions"
@@ -518,12 +542,19 @@ class SQLReasoner:
                     campaign_metric = "actual_spend"
                 else:
                     campaign_metric = "revenue_generated"
+            elif any(term in question_lower for term in ("performance", "result")):
+                intent = "CAMPAIGN_PERFORMANCE"
+                columns = [
+                    "campaign_id", "campaign_name", "actual_spend",
+                    "revenue_generated", "conversions", "clicks",
+                ]
             else:
                 raise ValueError("Specify campaign metrics, an acquisition channel, or a campaign ID.")
-            columns = [
-                "campaign_id", "campaign_name", "actual_spend",
-                "revenue_generated", "conversions", "clicks",
-            ]
+            if intent == "CAMPAIGN_RANKING":
+                columns = [
+                    "campaign_id", "campaign_name", "actual_spend",
+                    "revenue_generated", "conversions", "clicks",
+                ]
         # Check broader intents first so performance questions containing
         # words such as revenue or conversions remain campaign queries.
         elif (

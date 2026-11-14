@@ -1,5 +1,6 @@
 
 from typing import Any
+import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,8 @@ from pydantic import BaseModel
 
 from backend.app.database_config import load_database_config
 from backend.app.orchestration.orchestrator import Orchestrator
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -31,6 +34,7 @@ app.add_middleware(
 
 class QuestionRequest(BaseModel):
     question: str
+    clarification_context: dict[str, Any] | None = None
 
 
 class Source(BaseModel):
@@ -50,6 +54,7 @@ class QuestionResponse(BaseModel):
     answer: str
     sources: list[Source]
     verification: dict[str, Any] | None = None
+    clarification: dict[str, Any] | None = None
 
 
 orchestrator = Orchestrator(**load_database_config())
@@ -85,7 +90,10 @@ def ask_question(
         )
 
     try:
-        result = orchestrator.answer(request.question)
+        result = orchestrator.answer(
+            request.question,
+            clarification_context=request.clarification_context,
+        )
 
         sources = []
 
@@ -126,6 +134,7 @@ def ask_question(
             "answer": result["answer"],
             "sources": sources or result.get("sources", []),
             "verification": result.get("verification"),
+            "clarification": result.get("clarification"),
         }
 
     except ValueError as exc:
@@ -135,7 +144,8 @@ def ask_question(
         ) from exc
 
     except Exception as exc:
+        logger.exception("Question orchestration failed")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process question: {exc}",
+            detail="Failed to process question. Please try again later.",
         ) from exc

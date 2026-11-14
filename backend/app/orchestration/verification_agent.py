@@ -10,7 +10,6 @@ class VerificationAgent:
     RANKING_METRICS = {
         "TOP_PRODUCTS_BY_QUANTITY": "units_sold",
         "TOP_PRODUCTS_BY_REVENUE": "total_revenue",
-        "CAMPAIGN_RANKING": "roi_percent",
         "CAMPAIGN_ROI": "roi_percent",
         "SELLER_PERFORMANCE": "total_revenue",
     }
@@ -127,6 +126,14 @@ class VerificationAgent:
 
             plan = sql_result.get("query_plan", {})
             metric = self.RANKING_METRICS.get(plan.get("intent"))
+            if plan.get("intent") == "CAMPAIGN_RANKING":
+                campaign_metrics = {
+                    "roi_percent", "revenue_generated", "conversions",
+                    "clicks", "actual_spend",
+                }
+                requested_metric = plan.get("campaign_metric")
+                if requested_metric in campaign_metrics:
+                    metric = requested_metric
             if metric:
                 sql = str(sql_result.get("sql", ""))
                 columns = (sql_result.get("result") or {}).get("columns", [])

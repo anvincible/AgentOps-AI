@@ -1,11 +1,14 @@
 
 import re
+import logging
 from typing import Any
 
 from backend.app.sql.sql_agent import SQLAgent
 from backend.app.rag.rag_agent import RAGAgent
 from backend.app.orchestration.answer_composer import AnswerComposer
 from backend.app.orchestration.verification_agent import VerificationAgent
+
+logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
@@ -46,11 +49,19 @@ class Orchestrator:
         self.answer_composer = AnswerComposer()
         self.verification_agent = VerificationAgent()
 
-    def answer(self, question: str) -> dict[str, Any]:
+    def answer(
+        self,
+        question: str,
+        clarification_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Automatically route a question, compose an answer, and verify it."""
 
         if not question or not question.strip():
             raise ValueError("Question cannot be empty.")
+
+        resolved_question = self._resolve_clarification(question, clarification_context)
+        if resolved_question:
+            question = resolved_question
 
         clarification = self._clarification_needed(question)
         if clarification:
@@ -66,6 +77,7 @@ class Orchestrator:
                 "answer": answer,
                 "sources": [],
                 "verification": verification,
+                "clarification": self._clarification_metadata(question, clarification),
             }
 
         route = self._route_question(question)
@@ -104,8 +116,13 @@ class Orchestrator:
         if route in ("SQL", "BOTH"):
             try:
                 response["sql"] = self.sql_agent.answer(question)
-            except ValueError as error:
-                sql_error = str(error)
+            except Exception as error:
+                if isinstance(error, ValueError):
+                    logger.warning("SQL agent rejected a query: %s", error)
+                    sql_error = "The requested structured-data query is not supported."
+                else:
+                    logger.exception("SQL agent failed while processing a question")
+                    sql_error = "The database query could not be completed."
 
         if route == "SQL" and sql_error:
             unsupported_answer = (
@@ -148,8 +165,13 @@ class Orchestrator:
         if route in ("RAG", "BOTH"):
             try:
                 response["rag"] = self.rag_agent.retrieve(question)
-            except ValueError as error:
-                response["rag_error"] = str(error)
+            except Exception as error:
+                if isinstance(error, ValueError):
+                    logger.warning("RAG agent could not retrieve evidence: %s", error)
+                    response["rag_error"] = "The requested document evidence is unavailable."
+                else:
+                    logger.exception("RAG agent failed while processing a question")
+                    response["rag_error"] = "Document retrieval could not be completed."
 
         # Compose the final answer from the agent results.
         response["answer"] = self.answer_composer.compose(response)
@@ -163,6 +185,12 @@ class Orchestrator:
             )
             response["answer"] += note
 
+        if route == "BOTH" and response.get("rag_error"):
+            response["answer"] += (
+                "\n\n*Note on document evidence:* "
+                "Document retrieval could not be completed."
+            )
+
         # Verify the answer and the evidence used.
         response["verification"] = self.verification_agent.verify(
             answer=response["answer"],
@@ -173,6 +201,78 @@ class Orchestrator:
         )
 
         return response
+
+    @staticmethod
+    def _clarification_metadata(question: str, prompt: str) -> dict[str, Any]:
+        text = question.lower()
+        if "product" in text and re.search(r"\b(best|top|highest|rank|ranking)\b", text):
+            return {
+                "original_question": question,
+                "kind": "product_ranking_metric",
+                "options": ["revenue", "quantity"],
+                "prompt": prompt,
+            }
+        if "customer" in text and re.search(r"\b(distribution|breakdown)\b", text):
+            return {
+                "original_question": question,
+                "kind": "customer_distribution_dimension",
+                "options": ["segment", "location", "city", "state", "country", "loyalty tier", "acquisition channel"],
+                "prompt": prompt,
+            }
+        if re.search(r"\b(last|previous) year\b", text):
+            return {
+                "original_question": question,
+                "kind": "date_range",
+                "options": ["previous calendar year", "rolling 12 months"],
+                "prompt": prompt,
+            }
+        return {"original_question": question, "kind": "other", "options": [], "prompt": prompt}
+
+    @staticmethod
+    def _resolve_clarification(
+        reply: str, context: dict[str, Any] | None
+    ) -> str | None:
+        if not isinstance(context, dict):
+            return None
+        original = context.get("original_question")
+        kind = context.get("kind")
+        options = context.get("options")
+        if not isinstance(original, str) or not original.strip() or not isinstance(options, list):
+            return None
+        normalized = re.sub(r"[^a-z0-9 ]", " ", reply.lower()).strip()
+        normalized = re.sub(r"\s+", " ", normalized)
+        if len(normalized.split()) > 6:
+            return None
+
+        aliases = {
+            "product_ranking_metric": {
+                "revenue": ("revenue", "sales"),
+                "quantity": ("quantity", "units", "quantity sold", "units sold"),
+            },
+            "customer_distribution_dimension": {
+                "segment": ("segment", "customer segment"),
+                "location": ("location", "locations"),
+                "city": ("city",), "state": ("state",), "country": ("country",),
+                "loyalty tier": ("loyalty", "loyalty tier"),
+                "acquisition channel": ("acquisition channel", "channel"),
+            },
+            "date_range": {
+                "previous calendar year": ("calendar year", "previous calendar year", "last calendar year"),
+                "rolling 12 months": ("rolling 12 months", "rolling year", "12 months"),
+            },
+        }
+        allowed = aliases.get(kind, {})
+        selected = next((option for option, phrases in allowed.items()
+                         if option in options and any(phrase in normalized for phrase in phrases)), None)
+        if not selected:
+            return None
+        if kind == "date_range":
+            question = re.sub(
+                r"\b(?:last|previous) year\b", selected, original,
+                count=1, flags=re.IGNORECASE,
+            )
+            return question if question != original else f"{original.strip()} {selected}"
+        return f"{original.strip()} by {selected}"
 
     def _clarification_needed(self, question: str) -> str | None:
         text = re.sub(r"\s+", " ", question.lower()).strip()
@@ -219,12 +319,19 @@ class Orchestrator:
                 "category/brand, or total stock grouped by that dimension?"
             )
         if (
-            re.search(r"\b(top|best|highest|rank|ranking|popular)\b.*\bproducts?\b", text)
+            re.search(r"\bproducts?\b", text)
+            and re.search(r"\b(top|best|highest|rank|ranking|popular|performed best)\b", text)
             and not re.search(
                 r"\b(revenue|sales|quantity|units|sold|price)\b", text
             )
         ):
             return "Should I rank products by quantity sold or by revenue?"
+        if (
+            re.search(r"\bcustomer\b", text)
+            and re.search(r"\b(distribution|breakdown)\b", text)
+            and not re.search(r"\b(segment|city|state|country|loyalty|channel)\b", text)
+        ):
+            return "Which supported dimension should I use: segment, location, loyalty tier, or acquisition channel?"
         if (
             re.search(r"\b(top|best|highest|rank|ranking)\b.*\bcampaigns?\b", text)
             and not re.search(r"\b(roi|revenue|spend|conversions?|clicks?)\b", text)

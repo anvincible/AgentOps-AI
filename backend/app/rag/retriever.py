@@ -57,6 +57,7 @@ class Retriever:
         self,
         query: str,
         top_k: int = 5,
+        document_types: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Search document chunks semantically, then rerank them."""
 
@@ -66,6 +67,29 @@ class Retriever:
         query_embedding = self.embedder.embed_text(query)
         query_vector = Vector(query_embedding)
         candidate_limit = max(top_k * 5, 25)
+
+        allowed_document_types = {
+            "MARKETING", "OPERATIONS", "POLICIES", "PRODUCTS", "REPORTS",
+        }
+        requested_types = [
+            value.strip().upper()
+            for value in (document_types or [])
+        ]
+        if not set(requested_types).issubset(allowed_document_types):
+            raise ValueError("Unsupported document type metadata filter.")
+
+        type_filter = ""
+        params: tuple[Any, ...]
+        if requested_types:
+            type_filter = " AND document_type = ANY(%s)"
+            params = (
+                query_vector,
+                requested_types,
+                query_vector,
+                candidate_limit,
+            )
+        else:
+            params = (query_vector, query_vector, candidate_limit)
 
         search_query = """
             SELECT
@@ -86,6 +110,7 @@ class Retriever:
                 1 - (embedding <=> %s) AS similarity
             FROM document_chunks
             WHERE embedding IS NOT NULL
+        """ + type_filter + """
             ORDER BY embedding <=> %s
             LIMIT %s;
         """
@@ -96,7 +121,7 @@ class Retriever:
             with connection.cursor() as cursor:
                 cursor.execute(
                     search_query,
-                    (query_vector, query_vector, candidate_limit),
+                    params,
                 )
                 rows = cursor.fetchall()
 

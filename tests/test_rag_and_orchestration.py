@@ -211,7 +211,7 @@ def test_rag_selection_rejects_uncovered_specific_question_aspect():
         "filename": "return_policy.pdf",
         "content": "Refunds are issued after returned items pass the inspection process.",
     }]
-    selected = AnswerComposer.select_relevant_evidence(
+    selected = AnswerComposer().select_relevant_evidence(
         evidence,
         "What does the policy say about interplanetary refunds?",
     )
@@ -231,6 +231,152 @@ def test_orchestrator_clarifies_material_sql_ambiguities():
     assert "city, state, or country" in orchestrator._clarification_needed("customers by location")
     assert "quantity sold or by revenue" in orchestrator._clarification_needed("top products")
     assert "is present in the database" in orchestrator._clarification_needed("customers by age")
+    assert "ROI, revenue, spend, or conversions" in orchestrator._clarification_needed("top campaigns")
+    assert "specific filter is not supported" in orchestrator._clarification_needed("orders where payment status is failed")
+
+
+@pytest.mark.unit
+def test_conflicting_document_excerpts_remain_attributed_and_qualified():
+    question = "What does the return policy say?"
+    evidence = {
+        "evidence": [
+            {
+                "document_id": "DOC-1", "chunk_id": "DOC-1-1",
+                "title": "Return Policy A", "filename": "policy_a.pdf",
+                "content": "Eligible returns must be requested within 30 calendar days of delivery.",
+            },
+            {
+                "document_id": "DOC-2", "chunk_id": "DOC-2-1",
+                "title": "Return Policy B", "filename": "policy_b.pdf",
+                "content": "Eligible returns must be requested within 14 calendar days of delivery.",
+            },
+        ],
+        "sources": [
+            {"document_id": "DOC-1", "chunk_id": "DOC-1-1"},
+            {"document_id": "DOC-2", "chunk_id": "DOC-2-1"},
+        ],
+    }
+    answer = AnswerComposer().compose({"route": "RAG", "question": question, "rag": evidence})
+    assert "any differences have not been reconciled" in answer
+    assert "Return Policy A" in answer and "Return Policy B" in answer
+    assert VerificationAgent().verify(answer, "RAG", rag_result=evidence, question=question)["verified"]
+
+
+@pytest.mark.unit
+def test_paraphrase_synonyms_retain_supported_return_policy_evidence():
+    evidence = [{
+        "document_id": "DOC-POL-001",
+        "chunk_id": "DOC-POL-001-002",
+        "title": "Return Refund Policy",
+        "filename": "return_refund_policy.pdf",
+        "document_type": "POLICIES",
+        "content": (
+            "Eligible products may generally be returned within 30 calendar "
+            "days, subject to product-specific conditions."
+        ),
+    }]
+    selected = AnswerComposer().select_relevant_evidence(
+        evidence,
+        "How long after buying something can a customer send it back for a refund?",
+    )
+    assert [item["document_id"] for item in selected] == ["DOC-POL-001"]
+
+
+@pytest.mark.unit
+def test_explicit_policy_facets_select_both_documents_and_verify_coverage():
+    question = "What do the return policy and customer service policy say about refunds?"
+    evidence = {
+        "evidence": [
+            {
+                "document_id": "DOC-POL-001", "chunk_id": "DOC-POL-001-002",
+                "title": "Return Refund Policy", "filename": "return_refund_policy.pdf",
+                "document_type": "POLICIES",
+                "content": "Eligible returns may receive a refund within 30 calendar days.",
+                "similarity": 0.55,
+            },
+            {
+                "document_id": "DOC-POL-003", "chunk_id": "DOC-POL-003-004",
+                "title": "Customer Service Policy", "filename": "customer_service_policy.pdf",
+                "document_type": "POLICIES",
+                "content": "Customer support handles refund disputes and escalations after reviewing customer account details.",
+                "similarity": 0.40,
+            },
+        ],
+        "sources": [
+            {"document_id": "DOC-POL-001", "chunk_id": "DOC-POL-001-002"},
+            {"document_id": "DOC-POL-003", "chunk_id": "DOC-POL-003-004"},
+        ],
+    }
+    answer = AnswerComposer().compose({"route": "RAG", "question": question, "rag": evidence})
+    result = VerificationAgent().verify(
+        answer, "RAG", rag_result=evidence, question=question
+    )
+    assert "Return Refund Policy" in answer
+    assert "Customer Service Policy" in answer
+    assert result["verified"] is True
+    assert "Every explicitly requested document facet is represented." in result["checks"]
+
+
+@pytest.mark.unit
+def test_incomplete_multi_document_answer_is_qualified_and_unverified():
+    question = "What do the return policy and customer service policy say about refunds?"
+    evidence = {
+        "evidence": [{
+            "document_id": "DOC-POL-001", "chunk_id": "DOC-POL-001-002",
+            "title": "Return Refund Policy", "filename": "return_refund_policy.pdf",
+            "document_type": "POLICIES",
+            "content": "Eligible returns may receive a refund within 30 calendar days.",
+        }],
+        "sources": [{"document_id": "DOC-POL-001", "chunk_id": "DOC-POL-001-002"}],
+    }
+    answer = AnswerComposer().compose({"route": "RAG", "question": question, "rag": evidence})
+    result = VerificationAgent().verify(
+        answer, "RAG", rag_result=evidence, question=question
+    )
+    assert "not evidence for every requested document" in answer
+    assert result["verified"] is False
+    assert "customer service policy" in result["issues"][-1]
+
+
+@pytest.mark.unit
+def test_return_policy_plus_count_routes_hybrid_and_eligibility_routes_rag():
+    from backend.app.orchestration.orchestrator import Orchestrator
+
+    assert Orchestrator._route_question(
+        "What does the return policy say, and how many returns were recorded?"
+    ) == "BOTH"
+    assert Orchestrator._route_question(
+        "Can customers return lunar purchases for a refund?"
+    ) == "RAG"
+
+
+@pytest.mark.unit
+def test_document_type_filter_requires_explicit_request():
+    assert RAGAgent._explicit_document_type_filter(
+        "Only policy documents: what does the return policy say?"
+    ) == ["POLICIES"]
+    assert RAGAgent._explicit_document_type_filter(
+        "What does the return policy say?"
+    ) is None
+
+
+@pytest.mark.unit
+def test_paraphrased_shipping_question_selects_both_requested_aspects():
+    question = "How long does shipping take, and what happens if delivery is delayed?"
+    evidence = [
+        {
+            "document_id": "DOC-POL-002", "chunk_id": "DOC-POL-002-001",
+            "title": "Shipping Policy", "filename": "shipping_policy.pdf",
+            "content": "Standard shipping delivery usually takes 3 to 5 business days after dispatch.",
+        },
+        {
+            "document_id": "DOC-OPS-004", "chunk_id": "DOC-OPS-004-004",
+            "title": "Delivery Exception SOP", "filename": "delivery_exception_SOP.pdf",
+            "content": "When a delivery delay is reported, support checks carrier scans and contacts customers with a revised estimate.",
+        },
+    ]
+    selected = AnswerComposer().select_relevant_evidence(evidence, question)
+    assert {item["document_id"] for item in selected} == {"DOC-POL-002", "DOC-OPS-004"}
 
 
 # ---------------------------------------------------------------------------

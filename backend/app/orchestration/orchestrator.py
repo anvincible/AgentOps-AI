@@ -211,17 +211,46 @@ class Orchestrator:
         ):
             return "Which location grouping should I use: city, state, or country?"
         if (
-            re.search(r"\b(top|best|highest|rank|ranking)\b.*\bproducts?\b", text)
+            re.search(r"\b(inventory|stock)\b", text)
+            and re.search(r"\bby\s+(category|brand)\b", text)
+        ):
+            return (
+                "Do you want product-level inventory listed under each "
+                "category/brand, or total stock grouped by that dimension?"
+            )
+        if (
+            re.search(r"\b(top|best|highest|rank|ranking|popular)\b.*\bproducts?\b", text)
             and not re.search(
                 r"\b(revenue|sales|quantity|units|sold|price)\b", text
             )
         ):
             return "Should I rank products by quantity sold or by revenue?"
         if (
+            re.search(r"\b(top|best|highest|rank|ranking)\b.*\bcampaigns?\b", text)
+            and not re.search(r"\b(roi|revenue|spend|conversions?|clicks?)\b", text)
+        ):
+            return "Should I rank campaigns by ROI, revenue, spend, or conversions?"
+        if (
             re.search(r"\b(top|best|highest|rank|ranking)\b.*\bsellers?\b", text)
             and not re.search(r"\b(revenue|sales|orders|quantity|units)\b", text)
         ):
             return "Should I rank sellers by revenue, order count, or units sold?"
+        unsupported_filter = (
+            re.search(r"\b(where|whose|only)\b", text)
+            or re.search(r"\b(above|below|greater than|less than|over|under)\b", text)
+        )
+        supported_filter = (
+            "low stock" in text
+            or "out of stock" in text
+            or re.search(r"\b(last|past)\s+\d+\s+days?\b", text)
+            or re.search(r"\b20\d{2}\b", text)
+            or bool(self.rag_agent._explicit_document_type_filter(question))
+        )
+        if unsupported_filter and not supported_filter:
+            return (
+                "That specific filter is not supported by the current SQL "
+                "templates. Would you like an unfiltered summary instead?"
+            )
         return None
 
     @staticmethod
@@ -439,6 +468,15 @@ class Orchestrator:
             },
         )
 
+        return_policy_hybrid = (
+            policy_question
+            and has_sql_signal
+            and bool(re.search(r"\b(return|returns|refund|refunds)\b", text))
+            and metric_signal
+        )
+        if return_policy_hybrid:
+            return "BOTH"
+
         if policy_question:
             return "RAG"
 
@@ -462,6 +500,13 @@ class Orchestrator:
         if return_policy_detail and not Orchestrator._contains_term(
             text, {"count", "rate", "reasons", "status", "resolution", "trends"}
         ):
+            return "RAG"
+
+        return_eligibility_question = bool(re.search(
+            r"\b(can|may|eligible|allowed)\b.{0,80}\b(return|returns|refund|refunds)\b",
+            text,
+        ))
+        if return_eligibility_question and not metric_signal:
             return "RAG"
 
         if return_database_question:

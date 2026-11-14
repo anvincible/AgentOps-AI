@@ -15,6 +15,11 @@ class RAGAgent:
     This version does not use an LLM.
     """
 
+    # Baseline positives in the existing 204-chunk index scored at least
+    # 0.375 cosine similarity. The 0.30 floor leaves a 0.075 margin below
+    # that lowest observed positive while dropping weak nearest neighbors.
+    MIN_SEMANTIC_SIMILARITY = 0.30
+
     def __init__(
         self,
         host: str | None = None,
@@ -40,17 +45,32 @@ class RAGAgent:
         if not question or not question.strip():
             raise ValueError("Question cannot be empty.")
 
-        results = self.retriever.search(
-            query=question,
-            top_k=max(self.top_k * 5, 25),
-        )
+        retrieval_query = self._expand_retrieval_query(question)
+        document_types = self._explicit_document_type_filter(question)
+        search_options: dict[str, Any] = {
+            "query": retrieval_query,
+            "top_k": max(self.top_k * 5, 25),
+        }
+        # Do not filter on inferred metadata. This is used only when a user
+        # explicitly asks for a metadata document type.
+        if document_types:
+            search_options["document_types"] = document_types
+
+        results = self.retriever.search(**search_options)
+        results = [
+            item for item in results
+            if float(item.get("similarity", 0.0))
+            >= self.MIN_SEMANTIC_SIMILARITY
+        ]
 
         ranked = self._rank_evidence(question, results)
         ranked = self._drop_other_entity_documents(question, ranked)
+        ranked = self._deduplicate_chunks(ranked)
+        evidence_limit = max(self.top_k * 2, 10)
 
         return {
             "question": question,
-            "evidence": ranked[:self.top_k],
+            "evidence": ranked[:evidence_limit],
             "sources": [
                 {
                     "document_id": item.get("document_id"),
@@ -61,9 +81,67 @@ class RAGAgent:
                     "paragraph_number": item.get("paragraph_number"),
                     "chunk_id": item.get("chunk_id"),
                 }
-                for item in ranked[:self.top_k]
+                for item in ranked[:evidence_limit]
             ],
         }
+
+    @staticmethod
+    def _expand_retrieval_query(question: str) -> str:
+        """Add a small set of domain equivalents for common paraphrases."""
+        text = re.sub(r"\s+", " ", question.lower()).strip()
+        additions: list[str] = []
+
+        if re.search(r"\b(return|send(?:ing)? back|back for a refund)\b", text):
+            additions.append(
+                "return refund policy return window eligible item purchase days"
+            )
+        if re.search(r"\b(shipping|deliver(?:y|ies)|send(?:ing)? a package)\b", text):
+            additions.append(
+                "shipping delivery timeframe dispatch delay delivery exception"
+            )
+        if re.search(r"\bcustomer service policy\b", text):
+            additions.append("customer support service policy refund dispute")
+
+        return " ".join([question.strip(), *additions])
+
+    @staticmethod
+    def _explicit_document_type_filter(question: str) -> list[str] | None:
+        """Map explicit document-type requests to existing live metadata."""
+        text = question.lower()
+        match = re.search(
+            r"\b(?:only|limit to|restrict to)\s+(marketing|operations?|"
+            r"polic(?:y|ies)|products?|reports?)\s+(?:documents?|docs?)\b",
+            text,
+        )
+        if not match:
+            return None
+        return {
+            "marketing": ["MARKETING"],
+            "operation": ["OPERATIONS"],
+            "operations": ["OPERATIONS"],
+            "policy": ["POLICIES"],
+            "policies": ["POLICIES"],
+            "product": ["PRODUCTS"],
+            "products": ["PRODUCTS"],
+            "report": ["REPORTS"],
+            "reports": ["REPORTS"],
+        }[match.group(1)]
+
+    @staticmethod
+    def _deduplicate_chunks(
+        ranked: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Remove exact repeated chunks without collapsing source metadata."""
+        seen: set[tuple[str, str]] = set()
+        unique = []
+        for item in ranked:
+            content = re.sub(r"\s+", " ", str(item.get("content") or "")).strip().casefold()
+            key = (str(item.get("document_id") or ""), content)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        return unique
 
     @classmethod
     def _rank_evidence(

@@ -6,7 +6,8 @@ class AnswerComposer:
     """Compose readable answers from SQL and RAG evidence."""
 
     MAX_DOCUMENTS = 2
-    MAX_CONTENT_CHARS = 3000
+    MAX_CHUNKS_PER_DOCUMENT = 3
+    MAX_CONTENT_CHARS = 6000
 
     METADATA_FIELDS = {
         "document_id",
@@ -69,10 +70,21 @@ class AnswerComposer:
         "related", "regarding", "say", "says", "should", "show", "tell",
         "the", "this", "to", "what", "when", "where", "which", "who",
         "why", "results", "will", "with", "would", "you",
+        "customer", "customers", "recorded", "number", "count",
+        "happens",
     }
 
     RAG_TERM_EQUIVALENTS = {
         "timeline": {"window", "days", "within", "refund"},
+        "long": {"days", "window", "period"},
+        "buying": {"product", "item", "purchase"},
+        "bought": {"product", "item", "purchase"},
+        "something": {"product", "item"},
+        "send": {"return", "returned"},
+        "sent": {"return", "returned"},
+        "back": {"return", "returned"},
+        "delayed": {"delay", "delays", "late"},
+        "delivery": {"delivery", "delivered", "shipment", "dispatch"},
         "service": {"support", "service"},
         "defective": {"damaged", "quality", "defect"},
         "returns": {"return"},
@@ -195,7 +207,28 @@ class AnswerComposer:
                 "to answer this question from the available documents."
             )
 
-        lines = ["Based on the available documents:"]
+        missing_facets = self._missing_document_facets(question, selected)
+        if missing_facets:
+            lines = [
+                "I found some relevant excerpts, but not evidence for every "
+                "requested document. Missing: " + ", ".join(missing_facets) + "."
+            ]
+        else:
+            lines = ["Based on the available documents:"]
+        missing_aspects = self._missing_material_aspects(question, selected)
+        if missing_aspects:
+            lines.extend([
+                "",
+                "The retrieved excerpts do not provide: "
+                + ", ".join(missing_aspects)
+                + ".",
+            ])
+        if self._documents_differ(selected):
+            lines.extend([
+                "",
+                "The excerpts are attributed to their sources below; "
+                "any differences have not been reconciled.",
+            ])
 
         for item in selected:
             title = self._display_title(item)
@@ -240,9 +273,29 @@ class AnswerComposer:
             rag_result.get("evidence", []),
             question,
         )
+        missing_facets = self._missing_document_facets(question, selected)
+        missing_aspects = self._missing_material_aspects(question, selected)
 
         if selected:
             lines.extend(["", "**Supporting Document Evidence**"])
+            if missing_aspects:
+                lines.extend([
+                    "",
+                    "The retrieved excerpts do not provide: "
+                    + ", ".join(missing_aspects)
+                    + ".",
+                ])
+            if missing_facets:
+                lines.extend([
+                    "",
+                    "Evidence is missing for: " + ", ".join(missing_facets) + ".",
+                ])
+            if self._documents_differ(selected):
+                lines.extend([
+                    "",
+                    "The excerpts are attributed to their sources below; "
+                    "any differences have not been reconciled.",
+                ])
 
             for item in selected:
                 title = self._display_title(item)
@@ -254,6 +307,12 @@ class AnswerComposer:
 
                 if content:
                     lines.extend(["", f"**{title}**", content])
+        elif missing_facets:
+            lines.extend([
+                "",
+                "**Supporting Document Evidence**",
+                "I could not retrieve evidence for: " + ", ".join(missing_facets) + ".",
+            ])
 
         if not lines:
             return (
@@ -273,6 +332,105 @@ class AnswerComposer:
         if item.get("_general_context"):
             title = f"{title} (general context, covers multiple campaigns)"
         return str(title)
+
+    @staticmethod
+    def _documents_differ(items: list[dict[str, Any]]) -> bool:
+        document_ids = {
+            item.get("document_id") for item in items if item.get("document_id")
+        }
+        return len(document_ids) > 1
+
+    @classmethod
+    def _requested_document_facets(cls, question: str) -> dict[str, str]:
+        text = question.lower()
+        requested: dict[str, str] = {}
+        explicit_return_policy = bool(re.search(
+            r"\b(return|refund)\b.{0,30}\bpolic(?:y|ies)\b", text
+        ))
+        return_window_question = bool(re.search(
+            r"\b(how long|return window|refund timeline|eligible|eligibility|"
+            r"after (?:buying|purchase|purchasing))\b",
+            text,
+        ))
+        if explicit_return_policy or (
+            return_window_question
+            and re.search(r"\b(return|returns|refund|refunds|back)\b", text)
+        ):
+            requested["return_policy"] = "return/refund policy"
+        if re.search(r"\bcustomer\s+service\s+polic(?:y|ies)\b", text):
+            requested["customer_service_policy"] = "customer service policy"
+        if re.search(r"\bshipping\s+polic(?:y|ies)\b", text):
+            requested["shipping_policy"] = "shipping policy"
+        elif "shipping" in text and re.search(r"\b(delivery|deliveries|shipping)\b", text):
+            requested["shipping_policy"] = "shipping policy"
+        if re.search(r"\b(delivery|deliveries)\b", text) and re.search(
+            r"\b(delay|delayed|late|exception|happens)\b", text
+        ):
+            requested["delivery_exception"] = "delivery exception guidance"
+        return requested
+
+    @classmethod
+    def _missing_material_aspects(
+        cls,
+        question: str,
+        selected: list[dict[str, Any]],
+    ) -> list[str]:
+        text = question.lower()
+        if not re.search(r"\bhow long\b", text) or not re.search(
+            r"\b(shipping|delivery|deliveries)\b", text
+        ):
+            return []
+        excerpts = " ".join(
+            str(item.get("_clean_content") or item.get("content") or "")
+            for item in selected
+        )
+        if re.search(r"\b\d+\s+(?:calendar\s+|business\s+)?days?\b", excerpts, re.IGNORECASE):
+            return []
+        return ["a fixed general shipping duration"]
+
+    @classmethod
+    def _item_covers_document_facet(
+        cls, item: dict[str, Any], facet: str
+    ) -> bool:
+        searchable = " ".join(str(item.get(field) or "") for field in (
+            "title", "filename", "document_type", "content"
+        )).lower()
+        if facet == "return_policy":
+            return (
+                "return" in searchable
+                and "policy" in searchable
+                and (
+                    "return refund policy" in searchable
+                    or "return policy" in searchable
+                    or "return_refund_policy" in searchable
+                )
+            )
+        if facet == "customer_service_policy":
+            return (
+                "customer" in searchable
+                and ("service" in searchable or "support" in searchable)
+                and "policy" in searchable
+            )
+        if facet == "shipping_policy":
+            return "shipping" in searchable and "policy" in searchable
+        if facet == "delivery_exception":
+            return "delivery" in searchable and (
+                "exception" in searchable or "delay" in searchable
+                or "delayed" in searchable
+            )
+        return False
+
+    @classmethod
+    def _missing_document_facets(
+        cls,
+        question: str,
+        selected: list[dict[str, Any]],
+    ) -> list[str]:
+        requested = cls._requested_document_facets(question)
+        return [
+            label for facet, label in requested.items()
+            if not any(cls._item_covers_document_facet(item, facet) for item in selected)
+        ]
 
     @staticmethod
     def _friendly_label(field: str) -> str:
@@ -400,6 +558,7 @@ class AnswerComposer:
 
         requested_entities = cls._extract_entity_ids(question)
         topic_terms = cls._detect_topic_terms(question)
+        requested_facets = cls._requested_document_facets(question)
         if not cls._question_aspects_covered(question, evidence):
             return []
         candidates = []
@@ -427,7 +586,10 @@ class AnswerComposer:
                 )
                 topic_overlap = len(topic_terms & matching_terms)
 
-                if topic_overlap == 0:
+                if topic_overlap == 0 and not any(
+                    cls._item_covers_document_facet(item, facet)
+                    for facet in requested_facets
+                ):
                     continue
             else:
                 topic_overlap = 0
@@ -478,7 +640,46 @@ class AnswerComposer:
             reverse=True,
         )
 
-        selected = candidates[:cls.MAX_DOCUMENTS]
+        # Select at least one source for each explicitly requested document
+        # facet before filling remaining slots by relevance. Chunks from one
+        # document no longer consume all source slots by themselves.
+        selected_document_ids: list[str] = []
+        for facet in requested_facets:
+            facet_match = next((
+                item for item in candidates
+                if cls._item_covers_document_facet(item, facet)
+            ), None)
+            if facet_match:
+                document_id = str(facet_match.get("document_id") or "")
+                if document_id and document_id not in selected_document_ids:
+                    selected_document_ids.append(document_id)
+
+        max_documents = max(cls.MAX_DOCUMENTS, len(requested_facets))
+        for item in candidates:
+            if requested_facets and not any(
+                cls._item_covers_document_facet(item, facet)
+                for facet in requested_facets
+            ):
+                continue
+            document_id = str(item.get("document_id") or "")
+            if (
+                document_id
+                and document_id not in selected_document_ids
+                and len(selected_document_ids) < max_documents
+            ):
+                selected_document_ids.append(document_id)
+
+        selected: list[dict[str, Any]] = []
+        chunks_per_document: dict[str, int] = {}
+        for item in candidates:
+            document_id = str(item.get("document_id") or "")
+            if document_id not in selected_document_ids:
+                continue
+            count = chunks_per_document.get(document_id, 0)
+            if count >= cls.MAX_CHUNKS_PER_DOCUMENT:
+                continue
+            selected.append(item)
+            chunks_per_document[document_id] = count + 1
 
         # Restore chunk order before merging overlapping text, but keep the
         # relevance ranking as the primary order. Sorting by score first and
@@ -486,13 +687,14 @@ class AnswerComposer:
         # CMP-021 postmortem) is not displaced by a general report (e.g. a
         # multi-campaign performance PDF) that happens to sort first by
         # document_id alone.
-        selected.sort(
-            key=lambda item: (
-                -item["_score"],
-                str(item.get("document_id", "")),
-                cls._chunk_number(item.get("chunk_id", "")),
-            )
-        )
+        document_order = {
+            document_id: index
+            for index, document_id in enumerate(selected_document_ids)
+        }
+        selected.sort(key=lambda item: (
+            document_order.get(str(item.get("document_id") or ""), 10**6),
+            cls._chunk_number(item.get("chunk_id", "")),
+        ))
 
         merged: list[dict[str, Any]] = []
 
@@ -534,14 +736,31 @@ class AnswerComposer:
         ).lower()
         evidence_words = set(re.findall(r"\b[a-z0-9]+\b", searchable))
         words = re.findall(r"\b[a-z0-9]+\b", question.lower())
+        facet_terms: set[str] = set()
+        for facet in cls._requested_document_facets(question):
+            if facet == "return_policy":
+                facet_terms.update({"return", "refund", "policy", "policies"})
+            elif facet == "customer_service_policy":
+                facet_terms.update({"customer", "customers", "service", "policy", "policies"})
+            elif facet == "shipping_policy":
+                facet_terms.update({"shipping", "policy", "policies"})
         key_terms = {
             word for word in words
             if len(word) >= 5
             and word not in cls.RAG_QUERY_STOP_WORDS
+            and word not in facet_terms
             and not any(word in entity.lower() for entity in entities)
         }
         for term in key_terms:
             alternatives = cls.RAG_TERM_EQUIVALENTS.get(term, {term})
+            if (
+                term == "long"
+                and re.search(r"\bhow long\b", question.lower())
+                and re.search(r"\b(shipping|delivery|deliveries)\b", question.lower())
+            ):
+                # Keep policy/exception evidence so the answer can state that
+                # the retrieved excerpts contain no general duration.
+                continue
             if not any(
                 alt in evidence_words
                 or (alt.endswith("s") and alt[:-1] in evidence_words)

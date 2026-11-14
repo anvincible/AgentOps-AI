@@ -83,9 +83,11 @@ class VerificationAgent:
             return
 
         validation = sql_result.get("validation")
-        if validation is not None and not validation.get("valid", False):
+        if validation is None:
+            issues.append("SQL validation evidence is unavailable.")
+        elif not validation.get("valid", False):
             issues.append("SQL evidence did not pass SQL validation.")
-        elif validation is not None:
+        else:
             checks.append("SQL query passed validation.")
 
         rows = (sql_result.get("result") or {}).get("rows", [])
@@ -187,6 +189,30 @@ class VerificationAgent:
             checks.append("RAG answer text matches retrieved excerpts.")
 
         selected = self.composer.select_relevant_evidence(evidence, question)
+        missing_facets = self.composer._missing_document_facets(
+            question, selected
+        )
+        if missing_facets:
+            issues.append(
+                "Requested document coverage is incomplete: "
+                + ", ".join(missing_facets)
+                + "."
+            )
+        else:
+            requested_facets = self.composer._requested_document_facets(question)
+            if requested_facets:
+                checks.append("Every explicitly requested document facet is represented.")
+
+        missing_aspects = self.composer._missing_material_aspects(
+            question, selected
+        )
+        if missing_aspects:
+            issues.append(
+                "Retrieved evidence does not support every requested material aspect: "
+                + ", ".join(missing_aspects)
+                + "."
+            )
+
         source_rows = (rag_result or {}).get("sources", [])
         source_keys = {
             (item.get("document_id"), item.get("chunk_id"))

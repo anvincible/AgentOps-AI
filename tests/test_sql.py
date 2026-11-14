@@ -1,8 +1,12 @@
+import re
+
 import pytest
 
 from backend.app.sql.sql_generator import SQLGenerator
 from backend.app.sql.sql_reasoner import SQLReasoner
 from backend.app.sql.sql_validator import SQLValidator
+from backend.app.orchestration.answer_composer import AnswerComposer
+from backend.app.orchestration.verification_agent import VerificationAgent
 
 
 @pytest.mark.unit
@@ -66,6 +70,75 @@ def test_overall_campaign_summary_generation(schema_loader):
 
     assert "COUNT(*) AS campaign_count" in sql
     assert "SUM(revenue_generated)" in sql
+
+
+@pytest.mark.unit
+def test_campaign_performance_overview_generates_verified_aggregate_without_ranking(schema_loader):
+    question = "Show campaign performance."
+    reasoner = SQLReasoner(schema_loader)
+    generator = SQLGenerator(schema_loader)
+    plan = reasoner.reason(question)
+
+    sql, params = generator.generate_query(plan)
+    validation = SQLValidator(schema_loader.load_schema()).validate(sql)
+
+    assert plan["intent"] == "CAMPAIGN_PERFORMANCE"
+    assert params == ()
+    assert validation["valid"] is True
+    assert "COUNT(*) AS campaign_count" in sql
+    assert "SUM(actual_spend)" in sql
+    assert "SUM(revenue_generated)" in sql
+    assert "SUM(conversions)" in sql
+    assert "SUM(clicks)" in sql
+    assert "ORDER BY" not in sql.upper()
+    assert "roi_percent" not in sql
+
+    sql_result = {
+        "query_plan": plan,
+        "sql": sql,
+        "sql_params": params,
+        "validation": validation,
+        "result": {
+            "columns": ["campaign_count", "total_spend", "total_revenue", "total_conversions", "total_clicks"],
+            "rows": [[50, 100000, 250000, 1500, 50000]],
+        },
+    }
+    answer = AnswerComposer().compose({"route": "SQL", "question": question, "sql": sql_result})
+    verification = VerificationAgent().verify(answer, "SQL", sql_result=sql_result, question=question)
+    assert "aggregate overview across all campaigns; no ranking applied" in answer
+    assert verification["verified"] is True
+
+
+@pytest.mark.unit
+def test_campaign_roi_ranking_remains_verified_and_descending(schema_loader):
+    question = "Rank campaigns by ROI."
+    reasoner = SQLReasoner(schema_loader)
+    generator = SQLGenerator(schema_loader)
+    plan = reasoner.reason(question)
+    sql, params = generator.generate_query(plan)
+    validation = SQLValidator(schema_loader.load_schema()).validate(sql)
+
+    assert params == ()
+    assert validation["valid"] is True
+    assert re.search(r"ORDER\s+BY\s+roi_percent\s+DESC", sql, re.IGNORECASE)
+
+    sql_result = {
+        "query_plan": plan,
+        "sql": sql,
+        "sql_params": params,
+        "validation": validation,
+        "result": {
+            "columns": ["campaign_id", "campaign_name", "actual_spend", "revenue_generated", "conversions", "clicks", "roi_percent"],
+            "rows": [
+                ["CMP-1", "One", 100, 500, 10, 20, 400.0],
+                ["CMP-2", "Two", 200, 400, 8, 18, 100.0],
+            ],
+        },
+    }
+    answer = AnswerComposer().compose({"route": "SQL", "question": question, "sql": sql_result})
+    verification = VerificationAgent().verify(answer, "SQL", sql_result=sql_result, question=question)
+    assert verification["verified"] is True
+    assert "Ranking rows are ordered by roi_percent." in verification["checks"]
 
 
 @pytest.mark.unit

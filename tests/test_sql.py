@@ -42,6 +42,31 @@ def test_campaign_cmp021_query_planning(schema_loader):
 
 
 @pytest.mark.unit
+def test_campaign_metrics_wording_uses_filtered_performance_plan(schema_loader):
+    question = "What are the CMP-021 campaign metrics and recommended strategy?"
+    reasoner = SQLReasoner(schema_loader)
+    generator = SQLGenerator(schema_loader)
+    validator = SQLValidator(schema_loader.load_schema())
+
+    plan = reasoner.reason(question)
+    sql, params = generator.generate_query(plan)
+    validation = validator.validate(sql)
+
+    assert plan["intent"] == "CAMPAIGN_PERFORMANCE"
+    assert plan["entity_id"] == "CMP-021"
+    assert plan["columns"] == [
+        "campaign_id", "campaign_name", "actual_spend",
+        "revenue_generated", "conversions", "clicks",
+    ]
+    assert plan["filters"] == [
+        {"column": "campaign_id", "operator": "=", "value": "CMP-021"}
+    ]
+    assert params == ()
+    assert "WHERE mc.campaign_id = 'CMP-021'" in sql
+    assert validation["valid"] is True
+
+
+@pytest.mark.unit
 def test_campaign_comparison_and_roi_generation(schema_loader):
     reasoner = SQLReasoner(schema_loader)
     generator = SQLGenerator(schema_loader)

@@ -853,6 +853,21 @@ class AnswerComposer:
                 "campaign_recommendation", "campaign_observed_drivers"
             }
             if (
+                term == "metrics"
+                and campaign_facets.issubset(requested_facets)
+                and all(
+                    any(
+                        cls._item_covers_document_facet(item, facet)
+                        for item in evidence
+                    )
+                    for facet in campaign_facets
+                )
+            ):
+                # In this CMP-021 hybrid question, structured SQL evidence
+                # supplies the requested metrics; document evidence must
+                # independently cover both strategy facets.
+                continue
+            if (
                 term == "follow"
                 and campaign_facets.issubset(requested_facets)
                 and all(

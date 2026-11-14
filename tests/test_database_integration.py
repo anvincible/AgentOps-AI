@@ -39,3 +39,24 @@ def test_sql_agent_pipeline_uses_real_database(
     assert response["validation"]["valid"] is True
     assert response["result"]["row_count"] == 1
     assert response["result"]["rows"][0][0] == "CMP-021"
+
+
+def test_cmp021_metrics_and_strategy_wording_executes_read_only_campaign_query(
+    database_connection, database_config
+):
+    agent = SQLAgent(**database_config, max_rows=100)
+    response = agent.answer(
+        "What are the CMP-021 campaign metrics and recommended strategy?"
+    )
+
+    assert response["query_plan"]["intent"] == "CAMPAIGN_PERFORMANCE"
+    assert response["query_plan"]["filters"] == [
+        {"column": "campaign_id", "operator": "=", "value": "CMP-021"}
+    ]
+    assert response["validation"]["valid"] is True
+    assert response["result"]["row_count"] == 1
+    assert response["result"]["columns"] == [
+        "campaign_id", "campaign_name", "actual_spend",
+        "revenue_generated", "conversions", "clicks",
+    ]
+    assert response["result"]["rows"][0][0] == "CMP-021"

@@ -532,11 +532,14 @@ def test_cmp021_strategy_query_expansion_is_source_specific():
 
 
 @pytest.mark.unit
-def test_cmp021_strategy_composition_requires_both_postmortem_facets():
-    question = (
+@pytest.mark.parametrize("question", [
+    (
         "What were the results of campaign CMP-021 and what strategy "
         "was recommended?"
-    )
+    ),
+    "What are the CMP-021 campaign metrics and recommended strategy?",
+])
+def test_cmp021_strategy_composition_requires_both_postmortem_facets(question):
     evidence = [
         {
             "chunk_id": "DOC-MKT-024-006",
@@ -591,28 +594,48 @@ def test_cmp021_strategy_composition_requires_both_postmortem_facets():
     assert "campaign factors to investigate" in composer._missing_document_facets(
         question, selected[1:]
     )
+    if "metrics" in question:
+        assert composer.select_relevant_evidence(evidence[:1], question) == []
+        assert composer.select_relevant_evidence(evidence[1:2], question) == []
 
-    answer = composer.compose({
-        "route": "RAG",
-        "question": question,
-        "rag": {
-            "evidence": evidence,
-            "sources": [
-                {"document_id": row["document_id"], "chunk_id": row["chunk_id"]}
-                for row in evidence
-            ],
+    sql_result = {
+        "sql": (
+            "SELECT campaign_id, campaign_name, actual_spend, "
+            "revenue_generated, conversions, clicks "
+            "FROM marketing_campaigns WHERE campaign_id = 'CMP-021';"
+        ),
+        "validation": {"valid": True},
+        "query_plan": {
+            "intent": "CAMPAIGN_PERFORMANCE",
+            "entity_id": "CMP-021",
+            "filters": [{"column": "campaign_id", "operator": "=", "value": "CMP-021"}],
         },
+        "result": {
+            "columns": [
+                "campaign_id", "campaign_name", "actual_spend",
+                "revenue_generated", "conversions", "clicks",
+            ],
+            "rows": [["CMP-021", "NovaMart campaign 21", 100.0, 250.0, 12, 50]],
+        },
+    }
+    rag_result = {
+        "evidence": evidence,
+        "sources": [
+            {"document_id": row["document_id"], "chunk_id": row["chunk_id"]}
+            for row in evidence
+        ],
+    }
+    answer = composer.compose({
+        "route": "BOTH",
+        "question": question,
+        "sql": sql_result,
+        "rag": rag_result,
     })
     verification = VerificationAgent().verify(
         answer,
-        "RAG",
-        rag_result={
-            "evidence": evidence,
-            "sources": [
-                {"document_id": row["document_id"], "chunk_id": row["chunk_id"]}
-                for row in evidence
-            ],
-        },
+        "BOTH",
+        sql_result=sql_result,
+        rag_result=rag_result,
         question=question,
     )
     assert "not establish them as causes of CMP-021's results" in answer

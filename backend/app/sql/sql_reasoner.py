@@ -567,6 +567,7 @@ class SQLReasoner:
         elif (
             "performance" in question_lower
             or "results" in question_lower
+            or re.search(r"\bmetrics\b", question_lower)
             or "analy" in question_lower
             or "spend" in question_lower
             and "revenue" in question_lower

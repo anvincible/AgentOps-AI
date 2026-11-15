@@ -103,7 +103,7 @@ def test_source_attribution_retains_sql_intent_and_rag_document_refs():
     assert analysis["evidence"]["source"] == "NovaMart PostgreSQL database"
     assert analysis["evidence"]["query_intent"] == "RETURN_RATE"
     assert analysis["evidence"]["validated"] is True
-    assert analysis["evidence"]["document_sources"] == [
+    assert analysis["evidence"]["retrieved_document_sources"] == [
         {"document_id": "DOC-POL-001", "chunk_id": "003", "filename": "returns.pdf"}
     ]
     assert any("financial business impact cannot be quantified" in item

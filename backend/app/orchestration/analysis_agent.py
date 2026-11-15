@@ -45,7 +45,11 @@ class AnalysisAgent:
         if not isinstance(sql_result, dict):
             return self._insufficient(
                 "Structured SQL evidence is unavailable; document excerpts are not treated as numeric data.",
-                evidence={"validated": False, "row_count": 0, "document_sources": rag_sources},
+                evidence={
+                    "validated": False,
+                    "row_count": 0,
+                    "retrieved_document_sources": rag_sources,
+                },
             )
         validation = sql_result.get("validation")
         result = sql_result.get("result") or {}
@@ -70,7 +74,7 @@ class AnalysisAgent:
             "validated": True,
             "row_count": len(records),
             "fields": list(columns),
-            "document_sources": rag_sources,
+            "retrieved_document_sources": rag_sources,
         }
         insights: list[str] = []
         limitations: list[str] = []

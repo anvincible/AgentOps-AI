@@ -176,7 +176,16 @@ class Orchestrator:
                     sql_error = "No business-summary query returned validated structured results."
             else:
                 try:
-                    response["sql"] = self.sql_agent.answer(question)
+                    sql_result = self.sql_agent.answer(question)
+                    validation = (
+                        sql_result.get("validation")
+                        if isinstance(sql_result, dict)
+                        else None
+                    )
+                    if not isinstance(validation, dict) or validation.get("valid") is not True:
+                        sql_error = "The structured-data query did not pass SQL validation."
+                    else:
+                        response["sql"] = sql_result
                 except Exception as error:
                     if isinstance(error, ValueError):
                         logger.warning("SQL agent rejected a query: %s", error)
@@ -249,6 +258,9 @@ class Orchestrator:
                 response.get("sql"), question, response.get("rag")
             )
 
+        if route in ("SQL", "BOTH"):
+            self._set_analysis_document_sources(response, question)
+
         # Compose the final answer from the agent results.
         response["answer"] = self.answer_composer.compose(response)
 
@@ -279,6 +291,36 @@ class Orchestrator:
             self._attach_business_summary_verification(response, response["verification"])
 
         return response
+
+    def _set_analysis_document_sources(
+        self,
+        response: dict[str, Any],
+        question: str,
+    ) -> None:
+        """Separate retrieved candidates from document excerpts used in the answer."""
+        analysis = response.get("analysis")
+        evidence = analysis.get("evidence") if isinstance(analysis, dict) else None
+        if not isinstance(evidence, dict):
+            return
+
+        rag_result = response.get("rag") or {}
+        retrieved_sources = rag_result.get("sources", [])
+        selected_evidence = self.answer_composer.select_relevant_evidence(
+            rag_result.get("evidence", []),
+            question,
+        )
+        fields = (
+            "document_id", "chunk_id", "filename", "title", "document_type",
+            "department", "page_number", "paragraph_number",
+        )
+        evidence["retrieved_document_sources"] = [
+            {field: source.get(field) for field in fields}
+            for source in retrieved_sources
+        ]
+        evidence["document_sources"] = [
+            {field: source.get(field) for field in fields}
+            for source in selected_evidence
+        ]
 
     def _attach_business_summary_verification(
         self,

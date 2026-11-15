@@ -234,6 +234,13 @@ class SQLReasoner:
         dimension = self._dimension_from_question(
             question_lower, {"category": "category", "brand": "brand", "subcategory": "subcategory"}
         )
+        if self._is_product_count_question(question_lower) and dimension is None:
+            return self._analytics_plan(
+                question,
+                "PRODUCT_COUNT",
+                ["products"],
+                [("products", "product_id")],
+            )
         if "rating" in question_lower or "price" in question_lower:
             measure = "rating" if "rating" in question_lower else "unit_price"
             required = [("products", measure)]
@@ -256,6 +263,19 @@ class SQLReasoner:
                 dimension=dimension,
             )
         raise ValueError("Specify product category, brand, inventory, stock, price, or rating for product analytics.")
+
+    @staticmethod
+    def _is_product_count_question(question_lower: str) -> bool:
+        has_count_wording = bool(
+            re.search(
+                r"\b(?:how many|count(?: of)?|number of|total products?|product count)\b",
+                question_lower,
+            )
+        )
+        is_sales_question = bool(
+            re.search(r"\b(?:sold|selling|sales|revenue|orders?|quantity|units?)\b", question_lower)
+        )
+        return has_count_wording and not is_sales_question
 
     def _reason_support_analytics(
         self, question: str, question_lower: str

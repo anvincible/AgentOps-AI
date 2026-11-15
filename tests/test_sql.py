@@ -1,4 +1,5 @@
 import re
+from unittest.mock import Mock
 
 import pytest
 
@@ -7,6 +8,86 @@ from backend.app.sql.sql_reasoner import SQLReasoner
 from backend.app.sql.sql_validator import SQLValidator
 from backend.app.orchestration.answer_composer import AnswerComposer
 from backend.app.orchestration.verification_agent import VerificationAgent
+
+
+def _product_test_schema():
+    product_columns = (
+        "product_id", "product_name", "category", "brand", "subcategory",
+        "rating", "unit_price", "inventory_quantity", "active_status",
+    )
+    return {
+        "tables": {
+            "products": {
+                "columns": [{"column_name": name} for name in product_columns]
+            },
+            "order_items": {
+                "columns": [
+                    {"column_name": name}
+                    for name in ("product_id", "quantity", "item_total")
+                ]
+            },
+        }
+    }
+
+
+def test_product_catalog_count_uses_validated_product_identifier_count():
+    schema = _product_test_schema()
+    schema_loader = Mock()
+    schema_loader.load_schema.return_value = schema
+    question = "How many products are in the NovaMart catalog?"
+
+    plan = SQLReasoner(schema_loader).reason(question)
+    sql, params = SQLGenerator(schema_loader).generate_query(plan)
+    validation = SQLValidator(schema).validate(sql)
+
+    assert plan["intent"] == "PRODUCT_COUNT"
+    assert plan["entity_type"] == "analytics"
+    assert plan["tables"] == ["products"]
+    assert "product_id" in plan["columns"]
+    assert sql == "SELECT COUNT(product_id) AS product_count FROM products;"
+    assert params == ()
+    assert validation["valid"] is True, validation["errors"]
+
+    sql_result = {
+        "query_plan": plan,
+        "sql": sql,
+        "sql_params": params,
+        "validation": validation,
+        "result": {"columns": ["product_count"], "rows": [[2000]]},
+    }
+    answer = AnswerComposer().compose({
+        "route": "SQL", "question": question, "sql": sql_result,
+    })
+    verification = VerificationAgent().verify(
+        answer, "SQL", sql_result=sql_result, question=question
+    )
+    assert "2,000" in answer
+    assert verification["verified"] is True
+
+
+def test_product_count_does_not_capture_existing_catalog_query_types():
+    schema = _product_test_schema()
+    schema_loader = Mock()
+    schema_loader.load_schema.return_value = schema
+    reasoner = SQLReasoner(schema_loader)
+    generator = SQLGenerator(schema_loader)
+    validator = SQLValidator(schema)
+    cases = {
+        "How many products are there by brand?": "PRODUCT_DISTRIBUTION",
+        "How many products are there by category?": "PRODUCT_DISTRIBUTION",
+        "Show product inventory levels.": "PRODUCT_INVENTORY",
+        "Show low stock products.": "LOW_STOCK_PRODUCTS",
+        "Show top products by quantity sold.": "TOP_PRODUCTS_BY_QUANTITY",
+        "Show top products by revenue.": "TOP_PRODUCTS_BY_REVENUE",
+    }
+
+    for question, expected_intent in cases.items():
+        plan = reasoner.reason(question)
+        sql, _params = generator.generate_query(plan)
+        assert plan["intent"] == expected_intent
+        assert validator.validate(sql)["valid"] is True, question
+
+    assert SQLReasoner._is_product_count_question("How many products were sold?") is False
 
 
 @pytest.mark.unit

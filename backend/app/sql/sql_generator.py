@@ -364,6 +364,10 @@ LIMIT 10;
         def where_line(where: str) -> str:
             return f"WHERE {where}" if where else ""
 
+        if intent == "PRODUCT_COUNT":
+            validate("products", "product_id")
+            return "SELECT COUNT(product_id) AS product_count FROM products;", ()
+
         if intent == "CUSTOMER_DISTRIBUTION":
             dimensions = {
                 "customer_segment", "city", "state", "country",

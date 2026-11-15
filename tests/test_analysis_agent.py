@@ -83,6 +83,19 @@ def test_missing_or_invalid_evidence_is_reported_without_insight():
     assert agent.analyze(empty)["status"] == "insufficient_evidence"
 
 
+def test_verified_product_count_is_a_complete_factual_analysis():
+    result = _result(["product_count"], [(2000,)], "PRODUCT_COUNT")
+    analysis = AnalysisAgent().analyze(
+        result, "How many products are in the NovaMart catalog?"
+    )
+
+    assert analysis["status"] == "complete"
+    assert analysis["evidence"]["validated"] is True
+    assert analysis["evidence"]["query_intent"] == "PRODUCT_COUNT"
+    assert analysis["insights"] == ["Product Count: 2,000."]
+    assert analysis["chart"] is None
+
+
 def test_source_attribution_retains_sql_intent_and_rag_document_refs():
     result = _result(["return_count", "order_count", "return_rate_percent"], [(3585, 50000, 7.17)], "RETURN_RATE")
     rag = {"sources": [{"document_id": "DOC-POL-001", "chunk_id": "003", "filename": "returns.pdf"}]}

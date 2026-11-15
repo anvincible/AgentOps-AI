@@ -137,6 +137,19 @@ class AnswerComposer:
         result = sql_result.get("result", {})
         rows = result.get("rows", [])
         columns = result.get("columns", [])
+        plan = query_plan or {}
+
+        if plan.get("intent") == "SALES_BY_MONTH":
+            month_index = next(
+                (
+                    index
+                    for index, column in enumerate(columns)
+                    if str(column).lower() in {"sales_month", "month"}
+                ),
+                None,
+            )
+            if month_index is not None:
+                rows = sorted(rows, key=lambda row: str(row[month_index]))
 
         if not rows:
             return "I could not find any matching data."
@@ -151,7 +164,7 @@ class AnswerComposer:
                 formatted = self._format_value(column, value)
                 lines.append(f"- **{label}:** {formatted}")
 
-        return self._with_interpretation("\n".join(lines), query_plan or {})
+        return self._with_interpretation("\n".join(lines), plan)
 
     @staticmethod
     def _with_interpretation(

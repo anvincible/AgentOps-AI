@@ -149,6 +149,30 @@ def test_period_scoped_business_summary_clarifies_instead_of_returning_all_time_
     assert len(obj.sql_agent.calls) == 4
 
 
+def test_visible_all_time_option_resolves_provide_2025_business_summary():
+    obj = _orchestrator(_summary_results())
+    clarification = obj.answer("Provide the 2025 business summary.")
+
+    assert clarification["route"] == "CLARIFY"
+    assert clarification["clarification"]["kind"] == "business_summary_period"
+    assert clarification["clarification"]["options"] == ["all-time summary"]
+    assert obj.sql_agent.calls == []
+
+    resolved = obj.answer(
+        "all-time summary",
+        clarification_context=clarification["clarification"],
+    )
+
+    assert resolved["question"] == "Summarize NovaMart's business performance."
+    assert resolved["route"] == "SQL"
+    assert [item["area"] for item in resolved["analysis"]["evidence"]["components"]] == [
+        "Sales", "Customers", "Returns", "Campaigns",
+    ]
+    assert resolved["verification"]["verified"] is True
+    assert resolved["verification"]["business_summary"]["coverage_status"] == "complete"
+    assert len(obj.sql_agent.calls) == 4
+
+
 def test_business_summary_period_clarification_accepts_natural_affirmative_replies():
     replies = (
         "All-time data is acceptable.",
@@ -379,6 +403,27 @@ def test_monthly_trend_product_comparison_and_return_rate_are_preserved():
     assert Orchestrator._route_question(
         "What are the CMP-021 campaign metrics and recommended strategy?"
     ) == "BOTH"
+
+
+def test_monthly_sql_answer_lists_months_in_chronological_order():
+    question = "Show monthly revenue trend."
+    monthly_sql = _sql_result(
+        "SALES_BY_MONTH",
+        ["sales_month", "total_revenue"],
+        [
+            ["2025-03-01", 300],
+            ["2025-01-01", 100],
+            ["2025-02-01", 200],
+        ],
+    )
+    answer = AnswerComposer().compose({
+        "route": "SQL", "question": question, "sql": monthly_sql,
+    })
+    month_positions = [answer.index(month) for month in (
+        "2025-01-01", "2025-02-01", "2025-03-01",
+    )]
+
+    assert month_positions == sorted(month_positions)
 
 
 def test_rag_and_hybrid_answer_verification_paths_remain_available():

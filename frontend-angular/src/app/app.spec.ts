@@ -41,7 +41,7 @@ describe('App', () => {
   };
 
   const businessSummaryPeriodClarification: ClarificationContext = {
-    original_question: "Summarize NovaMart's business performance for 2025.",
+    original_question: 'Provide the 2025 business summary.',
     kind: 'business_summary_period',
     options: ['all-time summary'],
     prompt: 'I cannot apply that time period consistently. Would you like the all-time business summary instead?',
@@ -265,7 +265,7 @@ describe('App', () => {
     });
   });
 
-  it('sends the selectable all-time option without adding a grouping prefix', () => {
+  it('sends the visible all-time option with context for the original business summary', () => {
     const { fixture, app } = createApp();
     requestClarification(
       fixture,
@@ -274,15 +274,51 @@ describe('App', () => {
       businessSummaryPeriodClarification,
     );
 
-    app.selectClarificationOption('all-time summary');
+    const option = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>(
+        '.clarification-option',
+      ),
+    ).find((button) => button.textContent?.trim() === 'All-Time Summary');
+    expect(option).toBeTruthy();
+    option!.click();
+    fixture.detectChanges();
+
     const request = http.expectOne('/api/ask');
     expect(request.request.body).toEqual({
       question: 'all-time summary',
       clarification_context: businessSummaryPeriodClarification,
     });
-    request.flush({ route: 'SQL', answer: 'All-time structured summary.', clarification: null });
+    request.flush({
+      question: "Summarize NovaMart's business performance.",
+      route: 'SQL',
+      answer: 'All-time structured summary.',
+      clarification: null,
+      sources: [{ type: 'sql', title: 'NovaMart PostgreSQL database' }],
+      verification: {
+        verified: true,
+        route: 'SQL',
+        business_summary: {
+          verified: true,
+          validated_component_count: 4,
+          component_count: 4,
+          coverage_status: 'complete',
+          analysis_consistent: true,
+          consistency_scope: 'four KPI areas',
+          component_queries: [],
+          coverage: [
+            { area: 'Sales', status: 'covered' },
+            { area: 'Customers', status: 'covered' },
+            { area: 'Returns', status: 'covered' },
+            { area: 'Campaigns', status: 'covered' },
+          ],
+          issues: [],
+        },
+      },
+    });
     fixture.detectChanges();
     expect(app.pendingClarification).toBeNull();
+    expect(app.messages[3].route).toBe('SQL');
+    expect(app.messages[3].verification?.business_summary?.coverage).toHaveLength(4);
   });
 
   it('does not send business-summary context with an unrelated reply', () => {
@@ -466,6 +502,45 @@ describe('App', () => {
     expect(element.querySelector('.verification-card')?.textContent)
       .toContain('Basic checks passed');
     expect(app.pendingClarification).toBeNull();
+  });
+
+  it('shows verified product count analysis without an insufficient-evidence warning', () => {
+    const { fixture, app } = createApp();
+    app.question = 'How many products are in the NovaMart catalog?';
+    app.sendQuestion();
+    http.expectOne('/api/ask').flush({
+      route: 'SQL',
+      answer: 'Here is what I found: Products: 2,000.',
+      sources: [{ type: 'sql', title: 'NovaMart PostgreSQL database' }],
+      verification: {
+        verified: true,
+        route: 'SQL',
+        checks: ['SQL query passed validation.', 'SQL answer values match the returned rows.'],
+      },
+      analysis: {
+        status: 'complete',
+        summary: 'Analysis is limited to the validated SQL row shown with this answer.',
+        insights: ['Product Count: 2,000.'],
+        chart: null,
+        evidence: {
+          source: 'NovaMart PostgreSQL database',
+          query_intent: 'PRODUCT_COUNT',
+          validated: true,
+          row_count: 1,
+        },
+        limitations: [],
+      },
+    });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    const analysis = element.querySelector('.analysis-card');
+    expect(analysis?.textContent).toContain('SQL evidence');
+    expect(analysis?.textContent).toContain('Product Count: 2,000.');
+    expect(analysis?.textContent).not.toContain('Insufficient evidence');
+    expect(element.querySelector('.source-card')?.textContent)
+      .toContain('NovaMart PostgreSQL database');
+    expect(element.querySelector('.verification-pass')).not.toBeNull();
   });
 
   it('renders evidence-grounded analysis and chart data when the API supplies it', () => {

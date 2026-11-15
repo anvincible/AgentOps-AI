@@ -25,6 +25,7 @@ class AnalysisAgent:
         "total_revenue", "revenue_generated", "total_spend", "actual_spend",
         "average_order_value", "order_count", "customer_count",
         "return_rate_percent", "roi_percent", "units_sold", "count",
+        "product_count",
         "return_count", "campaign_count", "conversions", "clicks", "ticket_count",
     )
 

@@ -90,6 +90,30 @@ def test_product_count_does_not_capture_existing_catalog_query_types():
     assert SQLReasoner._is_product_count_question("How many products were sold?") is False
 
 
+def test_sales_by_month_template_orders_by_month_not_revenue():
+    schema = {
+        "tables": {
+            "orders": {
+                "columns": [
+                    {"column_name": name}
+                    for name in ("order_id", "order_date", "total_amount")
+                ]
+            }
+        }
+    }
+    schema_loader = Mock()
+    schema_loader.load_schema.return_value = schema
+    reasoner = SQLReasoner(schema_loader)
+    generator = SQLGenerator(schema_loader)
+    plan = reasoner.reason("Show monthly revenue trend.")
+    sql, params = generator.generate_query(plan)
+
+    assert plan["intent"] == "SALES_BY_MONTH"
+    assert params == ()
+    assert "ORDER BY sales_month ASC" in sql
+    assert SQLValidator(schema).validate(sql)["valid"] is True
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("question", "intent", "column"),

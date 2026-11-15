@@ -536,9 +536,11 @@ ORDER BY total_revenue DESC;
             validate("orders", "order_id", "order_date", "total_amount")
             if intent == "SALES_BY_MONTH":
                 key, label = "DATE_TRUNC('month', o.order_date)::date", "sales_month"
+                ordering = "sales_month ASC"
             else:
                 validate("orders", "region")
                 key, label = "o.region", "region"
+                ordering = "total_revenue DESC"
             where = date_clause("orders", "o", "order_date")
             sql = f"""
 SELECT {key} AS {label}, COUNT(*) AS order_count,
@@ -547,7 +549,7 @@ SELECT {key} AS {label}, COUNT(*) AS order_count,
 FROM orders AS o
 {where_line(where)}
 GROUP BY {key}
-ORDER BY total_revenue DESC
+ORDER BY {ordering}
 LIMIT 100;
 """
             return sql.strip(), tuple(params)

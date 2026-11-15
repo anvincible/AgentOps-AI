@@ -442,10 +442,14 @@ export class App implements OnInit {
 
     if (context.kind === 'business_summary_period') {
       const original = this.normalizeClarificationText(context.original_question);
+      const requestsSummary =
+        /\b(?:summarize|summarise|summary|overview|snapshot)\b/.test(original) ||
+        original.includes('business performance');
+      const hasBusinessScope = /\b(?:novamart|business|overall)\b/.test(original);
+      const namesSpecificEntity =
+        /\b(?:campaign|product|customer|return|seller|shipment|payment|ticket)\b/.test(original);
       const hasBusinessSummaryScope =
-        original.includes('business performance') &&
-        /\b(?:novamart|business|overall)\b/.test(original) &&
-        /\b(?:summarize|summarise|summary|overview|snapshot)\b/.test(original);
+        requestsSummary && hasBusinessScope && !namesSpecificEntity;
       const hasPeriod =
         /\b20\d{2}\b/.test(original) ||
         /\b(?:last|past|previous|rolling) (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve) (?:days?|weeks?|months?|quarters?|years?)\b/.test(original) ||

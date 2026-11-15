@@ -3,6 +3,7 @@ from backend.app.sql.schema_inspector import DatabaseSchemaLoader
 from backend.app.sql.sql_generator import SQLGenerator
 from backend.app.sql.sql_validator import SQLValidator
 from backend.app.sql.sql_executor import SQLExecutor
+from backend.app.database_config import load_database_config
 
 
 def main():
@@ -14,18 +15,14 @@ def main():
     # Database configuration
     # ---------------------------------------------------------
 
-    password = "agentops"
 
     # ---------------------------------------------------------
     # Create database components
     # ---------------------------------------------------------
 
+    db_config = load_database_config(require_explicit=True)
     schema_loader = DatabaseSchemaLoader(
-        host="localhost",
-        port=5432,
-        database="novamart",
-        user="postgres",
-        password=password,
+        **db_config,
     )
 
     schema = schema_loader.load_schema()
@@ -35,11 +32,7 @@ def main():
     generator = SQLGenerator(schema_loader)
 
     executor = SQLExecutor(
-        host="localhost",
-        port=5432,
-        database="novamart",
-        user="postgres",
-        password=password,
+        **db_config,
         max_rows=100,
     )
 

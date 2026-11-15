@@ -4,6 +4,7 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 from backend.app.sql.sql_agent import SQLAgent
+from backend.app.database_config import load_database_config
 
 
 def main():
@@ -11,12 +12,9 @@ def main():
     print("TESTING COMPLETE SQL PIPELINE")
     print("=" * 70)
 
+    db_config = load_database_config(require_explicit=True)
     agent = SQLAgent(
-        host="localhost",
-        port=5432,
-        database="novamart",
-        user="postgres",
-        password="agentops",
+        **db_config,
         max_rows=100,
     )
 

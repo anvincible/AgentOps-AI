@@ -8,10 +8,10 @@ from backend.app.rag.document_cleaner import DocumentCleaner
 from backend.app.rag.chunker import DocumentChunker
 from backend.app.rag.embedder import DocumentEmbedder
 from backend.app.rag.vector_store import VectorStore
+from backend.app.database_config import load_database_config
 
 
 # PostgreSQL connection settings
-DB_PASSWORD = "agentops"
 
 
 # Initialize pipeline components
@@ -25,12 +25,9 @@ chunker = DocumentChunker(
 
 embedder = DocumentEmbedder()
 
+db_config = load_database_config(require_explicit=True)
 vector_store = VectorStore(
-    host="localhost",
-    port=5432,
-    database="novamart",
-    user="postgres",
-    password=DB_PASSWORD,
+    **db_config,
 )
 
 

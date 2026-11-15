@@ -45,12 +45,9 @@ def main():
     print("TESTING SEMANTIC RETRIEVER - FULL DATASET")
     print("=" * 70)
 
+    db_config = load_database_config(require_explicit=True)
     retriever = Retriever(
-        host="localhost",
-        port=5432,
-        database="novamart",
-        user="postgres",
-        password="agentops",
+        **db_config,
     )
 
     test_queries = [

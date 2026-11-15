@@ -4,6 +4,7 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 from backend.app.rag.rag_agent import RAGAgent
+from backend.app.database_config import load_database_config
 
 
 def main():
@@ -11,12 +12,9 @@ def main():
     print("TESTING RAG AGENT - PHASE 4.3")
     print("=" * 70)
 
+    db_config = load_database_config(require_explicit=True)
     agent = RAGAgent(
-        host="localhost",
-        port=5432,
-        database="novamart",
-        user="postgres",
-        password="agentops",
+        **db_config,
         top_k=5,
     )
 

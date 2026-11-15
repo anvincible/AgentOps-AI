@@ -1,6 +1,7 @@
 from backend.app.sql.schema_inspector import DatabaseSchemaLoader
 from backend.app.sql.sql_reasoner import SQLReasoner
 from backend.app.sql.sql_generator import SQLGenerator
+from backend.app.database_config import load_database_config
 
 
 def main():
@@ -8,12 +9,9 @@ def main():
     print("TESTING SQL REASONER + SQL GENERATOR")
     print("=" * 70)
 
+    db_config = load_database_config(require_explicit=True)
     schema_loader = DatabaseSchemaLoader(
-        host="localhost",
-        port=5432,
-        database="novamart",
-        user="postgres",
-        password="agentops",
+        **db_config,
     )
 
     reasoner = SQLReasoner(schema_loader)

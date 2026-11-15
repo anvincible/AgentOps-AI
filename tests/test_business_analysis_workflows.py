@@ -57,6 +57,10 @@ class _RAGAgent:
     def _explicit_document_type_filter(_question):
         return None
 
+    @staticmethod
+    def retrieve(_question):
+        return {"evidence": [], "sources": []}
+
 
 def _orchestrator(responses):
     obj = Orchestrator.__new__(Orchestrator)
@@ -143,6 +147,54 @@ def test_period_scoped_business_summary_clarifies_instead_of_returning_all_time_
     assert resolved["question"] == "Summarize NovaMart's business performance."
     assert resolved["route"] == "SQL"
     assert len(obj.sql_agent.calls) == 4
+
+
+def test_business_summary_period_clarification_accepts_natural_affirmative_replies():
+    replies = (
+        "All-time data is acceptable.",
+        "Yes, use all-time data.",
+        "Use the all-time summary.",
+        "All time is fine.",
+    )
+    for reply in replies:
+        orchestrator = _orchestrator(_summary_results())
+        clarification = orchestrator.answer(
+            "Summarize NovaMart's business performance for 2025."
+        )
+        assert clarification["route"] == "CLARIFY"
+        assert orchestrator.sql_agent.calls == []
+        resolved = orchestrator.answer(
+            reply, clarification_context=clarification["clarification"]
+        )
+        assert resolved["question"] == "Summarize NovaMart's business performance."
+        assert resolved["route"] == "SQL"
+        assert resolved["analysis"]["status"] == "complete"
+        assert len(orchestrator.sql_agent.calls) == 4
+
+
+def test_business_summary_clarification_rejects_unrelated_and_stale_context():
+    orchestrator = _orchestrator(_summary_results())
+    pending = orchestrator.answer(
+        "Summarize NovaMart's business performance for 2025."
+    )["clarification"]
+    assert Orchestrator._resolve_clarification("What is the return policy?", pending) is None
+    assert Orchestrator._resolve_clarification("No, don't use all-time data.", pending) is None
+    assert Orchestrator._resolve_clarification("All-time is not acceptable.", pending) is None
+    assert Orchestrator._resolve_clarification("All time is fine.", None) is None
+    assert Orchestrator._resolve_clarification(
+        "All time is fine.",
+        {
+            **pending,
+            "original_question": "What is the return policy?",
+        },
+    ) is None
+    unrelated = orchestrator.answer(
+        "What is the return policy?", clarification_context=pending
+    )
+    expired = orchestrator.answer("All time is fine.")
+    assert unrelated["route"] == "RAG"
+    assert expired["route"] != "SQL"
+    assert orchestrator.sql_agent.calls == []
 
 
 def test_existing_sales_template_parameterizes_supported_year_filter_but_summary_refuses_partial_period():

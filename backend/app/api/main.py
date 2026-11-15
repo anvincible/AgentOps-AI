@@ -1,13 +1,16 @@
 
-from typing import Any
+from typing import Any, Literal
 import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.app.database_config import load_database_config
+from backend.app.api.report_endpoint import build_report_response
 from backend.app.orchestration.orchestrator import Orchestrator
+from backend.app.orchestration.report_agent import ReportAgent
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,11 @@ class QuestionRequest(BaseModel):
     clarification_context: dict[str, Any] | None = None
 
 
+class ReportRequest(BaseModel):
+    report_type: Literal["business_performance", "sales_analysis", "campaign_performance"]
+    format: Literal["pdf", "xlsx"]
+
+
 class Source(BaseModel):
     type: str
     title: str | None = None
@@ -59,6 +67,7 @@ class QuestionResponse(BaseModel):
 
 
 orchestrator = Orchestrator(**load_database_config())
+report_agent = ReportAgent()
 
 
 @app.get("/")
@@ -144,10 +153,29 @@ def ask_question(
             status_code=400,
             detail=str(exc),
         ) from exc
-
     except Exception as exc:
         logger.exception("Question orchestration failed")
         raise HTTPException(
             status_code=500,
             detail="Failed to process question. Please try again later.",
+        ) from exc
+
+
+@app.post("/reports")
+def create_report(request: ReportRequest) -> Response:
+    """Generate a report from predefined backend-owned questions and validated results."""
+    try:
+        return build_report_response(
+            report_agent,
+            request.report_type,
+            request.format,
+            orchestrator.answer,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate the report. Please try again later.",
         ) from exc

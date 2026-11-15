@@ -744,6 +744,67 @@
   font-size: 11px;
 }
 
+.report-form {
+  display: grid;
+  gap: 7px;
+  padding-top: 13px;
+
+  label {
+    color: #61718a;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  select {
+    width: 100%;
+    min-height: 34px;
+    padding: 6px 8px;
+    color: #344760;
+    background: #fff;
+    border: 1px solid #dfe6f0;
+    border-radius: 7px;
+    font: inherit;
+    font-size: 10px;
+  }
+}
+
+.report-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  margin-top: 3px;
+  color: #fff;
+  background: #316fe4;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+}
+
+.report-error,
+.report-status {
+  margin: 9px 0 0;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.report-error {
+  color: #b3333c;
+}
+
+.report-status {
+  color: #627590;
+}
+
 .rag-symbol {
   color: #7d5bd5;
   background: #f2edff;

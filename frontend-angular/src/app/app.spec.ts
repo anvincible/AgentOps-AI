@@ -5,6 +5,8 @@ import {
 } from '@angular/common/http/testing';
 import { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
+import { HttpHeaders } from '@angular/common/http';
+import { vi } from 'vitest';
 import { App } from './app';
 
 interface ClarificationContext {
@@ -36,6 +38,13 @@ describe('App', () => {
     kind: 'campaign_comparison_targets',
     options: [],
     prompt: 'Which two campaigns should I compare? Please provide two campaign IDs, such as CMP-021 and CMP-022.',
+  };
+
+  const businessSummaryPeriodClarification: ClarificationContext = {
+    original_question: "Summarize NovaMart's business performance for 2025.",
+    kind: 'business_summary_period',
+    options: ['all-time summary'],
+    prompt: 'I cannot apply that time period consistently. Would you like the all-time business summary instead?',
   };
 
   beforeEach(async () => {
@@ -218,6 +227,157 @@ describe('App', () => {
     expect(app.pendingClarification).toBeNull();
     expect(element.querySelectorAll('.analysis-series').length).toBe(2);
     expect(element.querySelector('.analysis-card')?.textContent).toContain('Campaign 021');
+  });
+
+  [
+    'All-time data is acceptable.',
+    'Yes, use all-time data.',
+    'Use the all-time summary.',
+    'All time is fine.',
+  ].forEach((reply) => {
+    it(`sends business-summary confirmation with clarification context: ${reply}`, () => {
+      const { fixture, app } = createApp();
+      requestClarification(
+        fixture,
+        app,
+        businessSummaryPeriodClarification.original_question,
+        businessSummaryPeriodClarification,
+      );
+
+      app.question = reply;
+      app.sendQuestion();
+      const request = http.expectOne('/api/ask');
+      expect(request.request.body).toEqual({
+        question: reply,
+        clarification_context: businessSummaryPeriodClarification,
+      });
+      request.flush({
+        question: "Summarize NovaMart's business performance.",
+        route: 'SQL',
+        answer: 'All-time structured summary.',
+        clarification: null,
+        verification: { verified: true, route: 'SQL' },
+      });
+      fixture.detectChanges();
+
+      expect(app.pendingClarification).toBeNull();
+      expect(app.messages[3].route).toBe('SQL');
+    });
+  });
+
+  it('sends the selectable all-time option without adding a grouping prefix', () => {
+    const { fixture, app } = createApp();
+    requestClarification(
+      fixture,
+      app,
+      businessSummaryPeriodClarification.original_question,
+      businessSummaryPeriodClarification,
+    );
+
+    app.selectClarificationOption('all-time summary');
+    const request = http.expectOne('/api/ask');
+    expect(request.request.body).toEqual({
+      question: 'all-time summary',
+      clarification_context: businessSummaryPeriodClarification,
+    });
+    request.flush({ route: 'SQL', answer: 'All-time structured summary.', clarification: null });
+    fixture.detectChanges();
+    expect(app.pendingClarification).toBeNull();
+  });
+
+  it('does not send business-summary context with an unrelated reply', () => {
+    const { fixture, app } = createApp();
+    requestClarification(
+      fixture,
+      app,
+      businessSummaryPeriodClarification.original_question,
+      businessSummaryPeriodClarification,
+    );
+
+    app.question = 'What is the return policy?';
+    app.sendQuestion();
+    const request = http.expectOne('/api/ask');
+    expect(request.request.body).toEqual({ question: 'What is the return policy?' });
+    expect(app.pendingClarification).toBeNull();
+    request.flush({ route: 'RAG', answer: 'Policy answer.', clarification: null });
+    fixture.detectChanges();
+  });
+
+  it('does not reuse cleared business-summary context after a new chat', () => {
+    const { fixture, app } = createApp();
+    requestClarification(
+      fixture,
+      app,
+      businessSummaryPeriodClarification.original_question,
+      businessSummaryPeriodClarification,
+    );
+    app.newChat();
+
+    app.question = 'All-time data is acceptable.';
+    app.sendQuestion();
+    const request = http.expectOne('/api/ask');
+    expect(request.request.body).toEqual({ question: 'All-time data is acceptable.' });
+    request.flush({ route: 'RAG', answer: 'No pending clarification context.', clarification: null });
+    fixture.detectChanges();
+    expect(app.pendingClarification).toBeNull();
+  });
+
+  it('downloads the selected report as a file and clears the loading state', () => {
+    const { fixture, app } = createApp();
+    app.reportType = 'campaign_performance';
+    app.reportFormat = 'xlsx';
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    const originalClick = HTMLAnchorElement.prototype.click;
+    const createObjectURL = vi.fn(() => 'blob:report-test');
+    const revokeObjectURL = vi.fn();
+    const click = vi.fn();
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    HTMLAnchorElement.prototype.click = click;
+
+    try {
+      app.downloadReport();
+      expect(app.reportLoading).toBe(true);
+      const request = http.expectOne('/api/reports');
+      expect(request.request.body).toEqual({
+        report_type: 'campaign_performance',
+        format: 'xlsx',
+      });
+      request.flush(new Blob(['PK\u0003\u0004 workbook']), {
+        headers: new HttpHeaders({
+          'Content-Disposition': 'attachment; filename="novamart-campaign-performance-20261115.xlsx"',
+        }),
+      });
+      fixture.detectChanges();
+
+      expect(createObjectURL).toHaveBeenCalled();
+      expect(click).toHaveBeenCalledOnce();
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:report-test');
+      expect(app.reportLoading).toBe(false);
+      expect(app.reportError).toBe('');
+    } finally {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+      HTMLAnchorElement.prototype.click = originalClick;
+    }
+  });
+
+  it('shows one understandable report error and resets loading after failure', () => {
+    const { fixture, app } = createApp();
+    app.downloadReport();
+    const request = http.expectOne('/api/reports');
+    expect(app.reportLoading).toBe(true);
+    request.flush(
+      { detail: 'Report unavailable.' },
+      { status: 500, statusText: 'Server Error' },
+    );
+    fixture.detectChanges();
+
+    expect(app.reportLoading).toBe(false);
+    expect(app.reportError).toContain('Could not generate the report');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')?.textContent)
+      .toContain('Could not generate the report');
   });
 
   it('does not send stale clarification context with an unrelated question', () => {

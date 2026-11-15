@@ -360,7 +360,24 @@ class Orchestrator:
             return None
 
         if kind == "business_summary_period":
-            if normalized in {"all time", "all time summary", "unfiltered", "unfiltered summary"}:
+            context_options = {
+                re.sub(r"[^a-z0-9 ]", " ", option.lower()).strip()
+                for option in options
+                if isinstance(option, str)
+            }
+            valid_context = (
+                Orchestrator._is_business_summary_question(original)
+                and Orchestrator._has_business_summary_period(original)
+                and "all time summary" in context_options
+            )
+            scope_is_all_time = bool(re.search(r"\b(all time|unfiltered)\b", normalized))
+            affirmative = bool(re.search(
+                r"\b(yes|yeah|sure|fine|acceptable|okay|ok|use|accept|works|good)\b",
+                normalized,
+            ))
+            negative = bool(re.search(r"\b(no|not|never|dont|don t|without)\b", normalized))
+            is_offered_option = normalized in context_options
+            if valid_context and scope_is_all_time and (is_offered_option or (affirmative and not negative)):
                 return "Summarize NovaMart's business performance."
             return None
 

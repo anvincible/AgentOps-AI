@@ -52,6 +52,9 @@ interface AskRequest {
   clarification_context?: ClarificationContext;
 }
 
+type ReportType = 'business_performance' | 'sales_analysis' | 'campaign_performance';
+type ReportFormat = 'pdf' | 'xlsx';
+
 interface AnalysisChart {
   type: 'bar' | 'line';
   metric: string;
@@ -109,6 +112,10 @@ export class App implements OnInit {
   errorMessage = '';
   messages: ChatMessage[] = [];
   pendingClarification: ClarificationContext | null = null;
+  reportType: ReportType = 'business_performance';
+  reportFormat: ReportFormat = 'pdf';
+  reportLoading = false;
+  reportError = '';
   private chatGeneration = 0;
 
   readonly suggestions = [
@@ -150,6 +157,53 @@ export class App implements OnInit {
           this.changeDetector.detectChanges();
         },
       });
+  }
+
+  downloadReport(): void {
+    if (this.reportLoading) {
+      return;
+    }
+    this.reportLoading = true;
+    this.reportError = '';
+    this.http
+      .post('/api/reports', {
+        report_type: this.reportType,
+        format: this.reportFormat,
+      }, {
+        observe: 'response',
+        responseType: 'blob',
+      })
+      .pipe(timeout(120000), finalize(() => {
+        this.reportLoading = false;
+        this.changeDetector.detectChanges();
+      }))
+      .subscribe({
+        next: (response) => {
+          const blob = response.body;
+          if (!blob || blob.size === 0) {
+            this.reportError = 'The report response was empty. Please try again.';
+            return;
+          }
+          const filename = this.reportFilename(response.headers.get('content-disposition'));
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = objectUrl;
+          link.download = filename;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(objectUrl);
+        },
+        error: () => {
+          this.reportError = 'Could not generate the report. Check the API connection and try again.';
+        },
+      });
+  }
+
+  private reportFilename(contentDisposition: string | null): string {
+    const match = contentDisposition?.match(/filename\s*=\s*"?([^";]+)"?/i);
+    return match?.[1]?.trim() || `novamart-report.${this.reportFormat}`;
   }
 
   selectSuggestion(suggestion: { prompt: string }): void {
@@ -276,14 +330,14 @@ export class App implements OnInit {
   }
 
   selectClarificationOption(option: string): void {
-    if (
-      this.loading ||
-      !this.pendingClarification?.options.includes(option)
-    ) {
+    const clarification = this.pendingClarification;
+    if (this.loading || !clarification?.options.includes(option)) {
       return;
     }
 
-    this.question = `By ${option}`;
+    this.question = clarification.kind === 'business_summary_period'
+      ? option
+      : `By ${option}`;
     this.sendQuestion();
   }
 
@@ -360,6 +414,32 @@ export class App implements OnInit {
     const normalized = this.normalizeClarificationText(reply);
     if (!normalized || normalized.split(' ').length > 6) {
       return false;
+    }
+
+    if (context.kind === 'business_summary_period') {
+      const original = this.normalizeClarificationText(context.original_question);
+      const hasBusinessSummaryScope =
+        original.includes('business performance') &&
+        /\b(?:novamart|business|overall)\b/.test(original) &&
+        /\b(?:summarize|summarise|summary|overview|snapshot)\b/.test(original);
+      const hasPeriod =
+        /\b20\d{2}\b/.test(original) ||
+        /\b(?:last|past|previous|rolling) (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve) (?:days?|weeks?|months?|quarters?|years?)\b/.test(original) ||
+        /\b(?:last|previous) year\b/.test(original) ||
+        /\b(?:monthly|weekly|quarterly|yearly|annually|by month|by quarter|over time)\b/.test(original);
+      const optionsAreExpected = context.options.some(
+        (option) => this.normalizeClarificationText(option) === 'all time summary',
+      );
+      const hasAllTimeScope = /\b(?:all time|unfiltered)\b/.test(normalized);
+      const isOfferedOption = context.options.some(
+        (option) => this.normalizeClarificationText(option) === normalized,
+      );
+      const affirmative = /\b(?:yes|yeah|sure|fine|acceptable|okay|ok|use|accept|works|good)\b/.test(normalized);
+      const negative = /\b(?:no|not|never|dont|don t|without)\b/.test(normalized);
+      return Boolean(
+        hasBusinessSummaryScope && hasPeriod && optionsAreExpected && hasAllTimeScope &&
+        (isOfferedOption || (affirmative && !negative)),
+      );
     }
 
     const aliases: Record<string, Record<string, string[]>> = {

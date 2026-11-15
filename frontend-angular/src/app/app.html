@@ -478,6 +478,42 @@
               </div>
             </div>
 
+            <div class="rail-card report-card">
+              <div class="rail-card-heading">
+                <div class="rail-heading-icon"><i class="pi pi-file-export"></i></div>
+                <div>
+                  <strong>Download a report</strong>
+                  <small>Generated from validated NovaMart results</small>
+                </div>
+              </div>
+              <form class="report-form" (ngSubmit)="downloadReport()">
+                <label for="report-type">Report type</label>
+                <select id="report-type" name="reportType" [(ngModel)]="reportType" [disabled]="reportLoading">
+                  <option value="business_performance">Business performance</option>
+                  <option value="sales_analysis">Sales analysis</option>
+                  <option value="campaign_performance">Campaign performance</option>
+                </select>
+                <label for="report-format">File format</label>
+                <select id="report-format" name="reportFormat" [(ngModel)]="reportFormat" [disabled]="reportLoading">
+                  <option value="pdf">PDF</option>
+                  <option value="xlsx">Excel (.xlsx)</option>
+                </select>
+                <button class="report-button" type="submit" [disabled]="reportLoading">
+                  @if (reportLoading) {
+                    <i class="pi pi-spin pi-spinner"></i> Preparing report...
+                  } @else {
+                    <i class="pi pi-download"></i> Download report
+                  }
+                </button>
+              </form>
+              @if (reportError) {
+                <p class="report-error" role="alert">{{ reportError }}</p>
+              }
+              @if (reportLoading) {
+                <p class="report-status" role="status">Collecting validated results and creating the file.</p>
+              }
+            </div>
+
             <div class="rail-card trust-card">
               <div class="rail-heading-icon trust-icon"><i class="pi pi-shield"></i></div>
               <strong>Evidence matters</strong>

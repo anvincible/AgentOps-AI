@@ -304,6 +304,7 @@ class AnalysisAgent:
                 "validated": True,
                 "row_count": len(rows),
                 "fields": list(columns),
+                "values": values,
             })
 
         insights: list[str] = []

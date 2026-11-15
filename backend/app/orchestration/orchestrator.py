@@ -652,9 +652,20 @@ class Orchestrator:
             "what can you do",
             "what can you help me with",
             "how can you help me",
+            "what do you do",
         }
 
         if normalized in chat_phrases:
+            return "CHAT"
+
+        greeting_with_capability = re.fullmatch(
+            r"(?:hello|hi|hey)\s*,?\s*(.+)",
+            normalized,
+        )
+        if (
+            greeting_with_capability
+            and greeting_with_capability.group(1) in chat_phrases
+        ):
             return "CHAT"
 
         if Orchestrator._is_business_summary_question(question):

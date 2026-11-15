@@ -553,9 +553,19 @@ from backend.app.orchestration.orchestrator import Orchestrator
             "BOTH",
         ),
         ("Hello", "CHAT"),
+        ("Hi", "CHAT"),
+        ("Hello, what can you help me with?", "CHAT"),
+        ("What do you do?", "CHAT"),
         ("How many returns were made?", "SQL"),
+        ("How many customers are there?", "SQL"),
         ("What are the return reasons?", "SQL"),
         ("What is the return rate?", "SQL"),
+        ("What is the return policy?", "RAG"),
+        ("What is the strategy for campaign CMP-021?", "RAG"),
+        (
+            "What are the CMP-021 campaign metrics and recommended strategy?",
+            "BOTH",
+        ),
     ],
 )
 def test_auto_routing(question, expected):

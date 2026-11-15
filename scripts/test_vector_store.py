@@ -11,7 +11,7 @@ from backend.app.rag.vector_store import VectorStore
 from backend.app.database_config import load_database_config
 
 
-# PostgreSQL connection settings
+db_config = load_database_config(require_explicit=True)
 
 
 # Initialize pipeline components
@@ -25,7 +25,6 @@ chunker = DocumentChunker(
 
 embedder = DocumentEmbedder()
 
-db_config = load_database_config(require_explicit=True)
 vector_store = VectorStore(
     **db_config,
 )

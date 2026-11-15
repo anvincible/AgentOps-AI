@@ -76,6 +76,9 @@ def test_business_summary_routes_to_sql_and_reports_only_retrieved_areas():
     assert result["route"] == "SQL"
     assert len(obj.sql_agent.calls) == 4
     assert result["verification"]["verified"] is True
+    assert result["verification"]["business_summary"]["verified"] is True
+    assert result["verification"]["business_summary"]["analysis_consistent"] is True
+    assert result["verification"]["business_summary"]["validated_component_count"] == 4
     assert result["analysis"]["status"] == "complete"
     assert [item["status"] for item in result["analysis"]["coverage"]] == [
         "covered", "covered", "covered", "covered",
@@ -103,6 +106,68 @@ def test_business_summary_partial_failures_are_explicit_and_unqueried_data_omitt
     assert not any("Customer Count" in item or "Return Rate" in item or "Return Count" in item
                    for item in analysis["insights"])
     assert "private database details" not in result["answer"]
+    summary_verification = result["verification"]["business_summary"]
+    assert result["verification"]["verified"] is False
+    assert summary_verification["coverage_status"] == "partial"
+    assert summary_verification["analysis_consistent"] is True
+    assert summary_verification["validated_component_count"] == 2
+
+
+def test_combined_summary_consistency_check_rejects_mismatched_evidence_metadata():
+    result = _orchestrator(_summary_results()).answer(
+        "Summarize NovaMart's business performance."
+    )
+    analysis = result["analysis"]
+    analysis["evidence"]["row_count"] += 1
+    checked = VerificationAgent.verify_business_summary(analysis)
+    assert checked["verified"] is False
+    assert checked["analysis_consistent"] is False
+    assert checked["coverage_status"] == "complete"
+
+
+def test_period_scoped_business_summary_clarifies_instead_of_returning_all_time_data():
+    responses = _summary_results()
+    obj = _orchestrator(responses)
+    for question in (
+        "Summarize NovaMart's business performance for 2025.",
+        "Summarize NovaMart's business performance over the last six months.",
+    ):
+        clarification = obj.answer(question)
+        assert clarification["route"] == "CLARIFY"
+        assert "time period consistently" in clarification["answer"]
+        assert clarification["clarification"]["kind"] == "business_summary_period"
+        assert clarification["clarification"]["options"] == ["all-time summary"]
+    assert obj.sql_agent.calls == []
+    clarification = obj.answer("Summarize NovaMart's business performance for 2025.")
+    resolved = obj.answer("all-time summary", clarification_context=clarification["clarification"])
+    assert resolved["question"] == "Summarize NovaMart's business performance."
+    assert resolved["route"] == "SQL"
+    assert len(obj.sql_agent.calls) == 4
+
+
+def test_existing_sales_template_parameterizes_supported_year_filter_but_summary_refuses_partial_period():
+    class SchemaLoader:
+        @staticmethod
+        def load_schema():
+            columns = ("order_id", "total_amount", "order_date")
+            return {"tables": {"orders": {"columns": [
+                {"column_name": column} for column in columns
+            ]}}}
+
+    loader = SchemaLoader()
+    plan = SQLReasoner(loader).reason("What are sales and average order value in 2025?")
+    sql, params = SQLGenerator(loader).generate_query(plan)
+    validation = SQLValidator(loader.load_schema()).validate(sql)
+    assert plan["intent"] == "SALES_SUMMARY"
+    assert plan["date_filter"] == {"start_year": 2025, "end_year": 2025}
+    assert "o.order_date >= %s AND o.order_date < %s" in sql
+    assert params[0].isoformat() == "2025-01-01"
+    assert params[1].isoformat() == "2026-01-01"
+    assert validation["valid"] is True
+    orchestrator = _orchestrator(_summary_results())
+    result = orchestrator.answer("Summarize NovaMart's business performance for 2025.")
+    assert result["route"] == "CLARIFY"
+    assert orchestrator.sql_agent.calls == []
 
 
 def test_business_summary_zero_campaign_spend_marks_roi_unavailable():
@@ -147,11 +212,32 @@ def test_campaign_comparison_without_two_targets_clarifies_and_followup_uses_sup
     assert result["question"] == "Compare campaigns CMP-021 and CMP-022."
     assert result["route"] == "SQL"
     assert result["sql"]["query_plan"]["intent"] == "CAMPAIGN_COMPARISON"
-    assert result["analysis"]["chart"]["labels"] == ["Campaign 21", "Campaign 22"]
+    assert result["analysis"]["chart"]["labels"] == [
+        "CMP-021 — Campaign 21", "CMP-022 — Campaign 22",
+    ]
     assert {series["metric"] for series in result["analysis"]["chart"]["series"]} == {
         "actual_spend", "revenue_generated", "conversions", "clicks",
     }
     assert result["verification"]["verified"] is True
+
+
+def test_direct_campaign_analysis_with_more_than_two_rows_is_explicitly_unsupported():
+    result = AnalysisAgent().analyze(
+        _sql_result(
+            "CAMPAIGN_COMPARISON",
+            ["campaign_id", "campaign_name", "actual_spend", "revenue_generated", "conversions", "clicks"],
+            [
+                ["CMP-021", "Campaign 21", 1000, 1500, 10, 100],
+                ["CMP-022", "Campaign 22", 1200, 1800, 12, 120],
+                ["CMP-023", "Campaign 23", 900, 1300, 8, 90],
+            ],
+        ),
+        "Compare campaigns CMP-021, CMP-022, and CMP-023.",
+    )
+    assert result["status"] == "insufficient_evidence"
+    assert result["chart"] is None
+    assert result["insights"] == []
+    assert "exactly two" in result["limitations"][0]
 
 
 def test_two_campaign_ids_reuse_the_validated_individual_campaign_template():
@@ -237,3 +323,46 @@ def test_monthly_trend_product_comparison_and_return_rate_are_preserved():
     assert "25.00%" in product["insights"][0]
     assert any("7.17%" in item for item in returns["insights"])
     assert any("financial business impact cannot be quantified" in item for item in returns["limitations"])
+    assert Orchestrator._route_question("What is the return policy?") == "RAG"
+    assert Orchestrator._route_question(
+        "What are the CMP-021 campaign metrics and recommended strategy?"
+    ) == "BOTH"
+
+
+def test_rag_and_hybrid_answer_verification_paths_remain_available():
+    rag_result = {
+        "evidence": [{
+            "document_id": "DOC-POLICY-001",
+            "chunk_id": "DOC-POLICY-001-001",
+            "title": "NovaMart Policy Notes",
+            "filename": "policy.txt",
+            "content": "The policy document explains procedures for customers and discusses customer count information there.",
+            "similarity": 0.9,
+        }],
+        "sources": [{
+            "document_id": "DOC-POLICY-001",
+            "chunk_id": "DOC-POLICY-001-001",
+            "title": "NovaMart Policy Notes",
+            "filename": "policy.txt",
+        }],
+    }
+    composer = AnswerComposer()
+    verifier = VerificationAgent()
+    rag_question = "What does the policy say?"
+    rag_answer = composer.compose({"route": "RAG", "question": rag_question, "rag": rag_result})
+    rag_verification = verifier.verify(
+        rag_answer, "RAG", rag_result=rag_result, question=rag_question
+    )
+    assert rag_verification["verified"] is True
+
+    sql_result = _sql_result("CUSTOMER_COUNT", ["customer_count"], [[10000]])
+    hybrid_question = "What does the policy say and how many customers are there?"
+    hybrid_answer = composer.compose({
+        "route": "BOTH", "question": hybrid_question,
+        "sql": sql_result, "rag": rag_result,
+    })
+    hybrid_verification = verifier.verify(
+        hybrid_answer, "BOTH", sql_result=sql_result,
+        rag_result=rag_result, question=hybrid_question,
+    )
+    assert hybrid_verification["verified"] is True

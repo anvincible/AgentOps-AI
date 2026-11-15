@@ -366,6 +366,14 @@
                             it is not, by itself, proof of factual correctness.
                           </p>
 
+                          @if (message.verification.business_summary; as summaryCheck) {
+                            <div class="verification-note" aria-label="Business summary verification scope">
+                              <p>Business summary: {{ summaryCheck.coverage_status }} evidence; combined-analysis consistency {{ summaryCheck.analysis_consistent ? 'checked' : 'not established' }}.</p>
+                              <p>Component SQL validation: {{ summaryCheck.validated_component_count }} of {{ summaryCheck.component_count }} queries passed validation and returned rows.</p>
+                              <p>{{ summaryCheck.consistency_scope }}</p>
+                            </div>
+                          }
+
                           @if (message.verification.checks?.length) {
                             <ul>
                               @for (check of message.verification.checks; track check) {

@@ -27,6 +27,17 @@ interface VerificationResult {
   route?: string;
   checks?: string[];
   issues?: string[];
+  business_summary?: {
+    verified: boolean;
+    validated_component_count: number;
+    component_count: number;
+    coverage_status: 'complete' | 'partial' | 'insufficient_evidence' | 'invalid';
+    analysis_consistent: boolean;
+    consistency_scope: string;
+    component_queries: { area: string; status: string; sql_validated: boolean; result_nonempty: boolean }[];
+    coverage: { area: string; status: string }[];
+    issues: string[];
+  };
 }
 
 interface ClarificationContext {

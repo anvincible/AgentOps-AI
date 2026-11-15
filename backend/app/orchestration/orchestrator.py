@@ -126,22 +126,43 @@ class Orchestrator:
                 )
                 validated_results: list[dict[str, Any]] = []
                 unavailable_areas: list[str] = []
+                component_queries: list[dict[str, Any]] = []
                 for area, summary_query in summary_queries:
                     try:
                         result = self.sql_agent.answer(summary_query)
                     except Exception as error:
                         logger.warning("Business summary query failed for %s (%s)", area, type(error).__name__)
                         unavailable_areas.append(area)
+                        component_queries.append({
+                            "area": area,
+                            "query_intent": None,
+                            "status": "query_failed",
+                            "sql_validated": False,
+                            "result_nonempty": False,
+                        })
                         continue
                     validation = result.get("validation") if isinstance(result, dict) else None
                     sql_data = result.get("result") if isinstance(result, dict) else None
-                    if (
-                        isinstance(validation, dict)
-                        and validation.get("valid") is True
-                        and isinstance(sql_data, dict)
-                        and sql_data.get("columns")
-                        and sql_data.get("rows")
-                    ):
+                    sql_validated = isinstance(validation, dict) and validation.get("valid") is True
+                    result_nonempty = (
+                        isinstance(sql_data, dict)
+                        and bool(sql_data.get("columns"))
+                        and bool(sql_data.get("rows"))
+                    )
+                    component_status = (
+                        "validated" if sql_validated and result_nonempty
+                        else "validation_failed" if not sql_validated
+                        else "empty_result"
+                    )
+                    component_queries.append({
+                        "area": area,
+                        "query_intent": (result.get("query_plan") or {}).get("intent")
+                        if isinstance(result, dict) else None,
+                        "status": component_status,
+                        "sql_validated": sql_validated,
+                        "result_nonempty": result_nonempty,
+                    })
+                    if sql_validated and result_nonempty:
                         validated_results.append(result)
                         response.setdefault("sql", result)
                     else:
@@ -149,6 +170,7 @@ class Orchestrator:
                 response["analysis"] = self.analysis_agent.analyze_business_summary(
                     validated_results, unavailable_areas
                 )
+                response["analysis"]["evidence"]["components"] = component_queries
                 if not validated_results:
                     sql_error = "No business-summary query returned validated structured results."
             else:
@@ -190,6 +212,8 @@ class Orchestrator:
                 sql_result=None,
                 question=question,
             )
+            if business_summary:
+                self._attach_business_summary_verification(response, verification)
 
             return {
                 "question": question,
@@ -244,12 +268,41 @@ class Orchestrator:
             rag_result=response.get("rag"),
             question=question,
         )
+        if business_summary:
+            self._attach_business_summary_verification(response, response["verification"])
 
         return response
+
+    def _attach_business_summary_verification(
+        self,
+        response: dict[str, Any],
+        verification: dict[str, Any],
+    ) -> None:
+        analysis_verification = self.verification_agent.verify_business_summary(
+            response.get("analysis") or {}
+        )
+        response["analysis"]["verification"] = analysis_verification
+        verification["business_summary"] = analysis_verification
+        verification["verified"] = bool(verification.get("verified")) and analysis_verification["verified"]
+        if not analysis_verification["verified"]:
+            verification.setdefault("issues", []).extend(analysis_verification["issues"])
+        verification.setdefault("checks", []).append(
+            "Business-summary component validation, KPI coverage, and consistency scope were checked."
+        )
 
     @staticmethod
     def _clarification_metadata(question: str, prompt: str) -> dict[str, Any]:
         text = question.lower()
+        if (
+            Orchestrator._is_business_summary_question(question)
+            and Orchestrator._has_business_summary_period(text)
+        ):
+            return {
+                "original_question": question,
+                "kind": "business_summary_period",
+                "options": ["all-time summary"],
+                "prompt": prompt,
+            }
         if "campaign" in text and re.search(r"\b(compare|comparison|difference|differences|contrast)\b", text):
             return {
                 "original_question": question,
@@ -306,6 +359,11 @@ class Orchestrator:
         if len(normalized.split()) > 6:
             return None
 
+        if kind == "business_summary_period":
+            if normalized in {"all time", "all time summary", "unfiltered", "unfiltered summary"}:
+                return "Summarize NovaMart's business performance."
+            return None
+
         aliases = {
             "product_ranking_metric": {
                 "revenue": ("revenue", "sales"),
@@ -338,6 +396,14 @@ class Orchestrator:
 
     def _clarification_needed(self, question: str) -> str | None:
         text = re.sub(r"\s+", " ", question.lower()).strip()
+        if (
+            Orchestrator._is_business_summary_question(question)
+            and Orchestrator._has_business_summary_period(text)
+        ):
+            return (
+                "I can’t apply that time period consistently across sales, customer, returns, and campaign KPIs "
+                "with the current query templates. Would you like the all-time business summary instead?"
+            )
         if "campaign" in text and re.search(
             r"\b(compare|comparison|difference|differences|contrast)\b", text
         ):
@@ -442,6 +508,26 @@ class Orchestrator:
             r"\b(campaign|product|customer|return|seller|shipment|payment|ticket)\b", text
         ))
         return summary_requested and business_scope and not specific_entity
+
+    @staticmethod
+    def _has_business_summary_period(question: str) -> bool:
+        text = question.casefold()
+        if re.search(r"\b20\d{2}\b", text):
+            return True
+        if re.search(
+            r"\b(?:last|past|previous|rolling)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve)\s+"
+            r"(?:days?|weeks?|months?|quarters?|years?)\b",
+            text,
+        ):
+            return True
+        if re.search(r"\b(?:last|previous)\s+year\b", text):
+            return True
+        if re.search(
+            r"\b(?:monthly|weekly|quarterly|yearly|annually|by month|by quarter|over time)\b",
+            text,
+        ):
+            return True
+        return bool(re.search(r"\b(?:between|from)\s+\w+\s+(?:and|to|through)\s+\w+\b", text))
 
     @staticmethod
     def _contains_term(question: str, terms: set[str]) -> bool:

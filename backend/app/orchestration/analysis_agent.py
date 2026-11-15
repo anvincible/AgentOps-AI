@@ -82,9 +82,19 @@ class AnalysisAgent:
 
         if self._is_monthly(records):
             records.sort(key=lambda row: self._label(row.get("sales_month", row.get("month"))))
-        if campaign_comparison and len(records) >= 2 and all(
-            "campaign_id" in row and "campaign_name" in row for row in records
-        ):
+        if campaign_comparison and len(records) > 2:
+            return self._insufficient(
+                "Campaign comparison supports exactly two separately identified campaigns; "
+                "the supplied SQL result contains more than two.",
+                evidence=evidence,
+            )
+        if campaign_comparison and len(records) == 2:
+            campaign_ids = [record.get("campaign_id") for record in records]
+            if not all(campaign_ids) or str(campaign_ids[0]) == str(campaign_ids[1]):
+                return self._insufficient(
+                    "Campaign comparison requires exactly two distinct campaign IDs.",
+                    evidence=evidence,
+                )
             chart, insights = self._compare_campaigns(records)
         elif self._is_monthly(records) and not self._asks_comparison(question_lower):
             metric = self._select_metric(records, question_lower)
@@ -190,7 +200,12 @@ class AnalysisAgent:
     def _compare_campaigns(
         cls, records: list[dict[str, Any]]
     ) -> tuple[dict[str, Any] | None, list[str]]:
-        labels = [str(row.get("campaign_name") or row["campaign_id"]) for row in records]
+        labels = [
+            f"{row['campaign_id']} — {row.get('campaign_name')}"
+            if row.get("campaign_name")
+            else str(row["campaign_id"])
+            for row in records
+        ]
         metric_fields = ("actual_spend", "revenue_generated", "conversions", "clicks")
         series = []
         insights = []

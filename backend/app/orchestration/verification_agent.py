@@ -68,6 +68,115 @@ class VerificationAgent:
             "issues": issues,
         }
 
+    @staticmethod
+    def verify_business_summary(analysis: dict[str, Any]) -> dict[str, Any]:
+        """Report component validation and whether combined summary metadata is consistent."""
+        expected_areas = ("Sales", "Customers", "Returns", "Campaigns")
+        expected_intents = {
+            "Sales": "SALES_SUMMARY",
+            "Customers": "CUSTOMER_COUNT",
+            "Returns": "RETURN_RATE",
+            "Campaigns": "CAMPAIGN_PERFORMANCE",
+        }
+        evidence = analysis.get("evidence") if isinstance(analysis, dict) else {}
+        evidence = evidence if isinstance(evidence, dict) else {}
+        components = evidence.get("components") or []
+        coverage = analysis.get("coverage") or []
+        results = evidence.get("results") or []
+
+        component_rows = [item for item in components if isinstance(item, dict)]
+        component_by_area = {item.get("area"): item for item in component_rows}
+        component_validation_complete = (
+            len(component_rows) == len(expected_areas)
+            and len(component_by_area) == len(expected_areas)
+            and set(component_by_area) == set(expected_areas)
+            and all(
+                item.get("status") == "validated"
+                and item.get("sql_validated") is True
+                and item.get("result_nonempty") is True
+                and item.get("query_intent") == expected_intents.get(item.get("area"))
+                for item in component_rows
+            )
+        )
+
+        coverage_rows = [item for item in coverage if isinstance(item, dict)]
+        coverage_by_area = {item.get("area"): item.get("status") for item in coverage_rows}
+        coverage_shape_valid = (
+            len(coverage_rows) == len(expected_areas)
+            and len(coverage_by_area) == len(expected_areas)
+            and set(coverage_by_area) == set(expected_areas)
+            and all(status in {"covered", "partial", "unavailable"} for status in coverage_by_area.values())
+        )
+        evidence_rows = [item for item in results if isinstance(item, dict)]
+        evidence_by_area = {item.get("area"): item for item in evidence_rows}
+        expected_evidence_areas = {
+            area for area, status in coverage_by_area.items() if status in {"covered", "partial"}
+        }
+        evidence_matches_coverage = (
+            len(evidence_rows) == len(evidence_by_area)
+            and set(evidence_by_area) == expected_evidence_areas
+            and all(
+                item.get("validated") is True
+                and item.get("query_intent") == expected_intents.get(item.get("area"))
+                and isinstance(item.get("row_count"), int)
+                and item.get("row_count", 0) > 0
+                and bool(item.get("fields"))
+                for item in evidence_rows
+            )
+            and evidence.get("validated") is True
+        )
+        status = analysis.get("status")
+        expected_status = (
+            "complete" if coverage_shape_valid and all(coverage_by_area.get(area) == "covered" for area in expected_areas)
+            else "partial" if coverage_shape_valid and any(coverage_by_area.get(area) in {"covered", "partial"} for area in expected_areas)
+            else "insufficient_evidence"
+        )
+        analysis_consistent = (
+            coverage_shape_valid
+            and evidence_matches_coverage
+            and status == expected_status
+            and evidence.get("row_count") == sum(item.get("row_count", 0) for item in evidence_rows)
+        )
+        complete_coverage = coverage_shape_valid and expected_status == "complete"
+        verified = component_validation_complete and analysis_consistent and complete_coverage
+
+        issues = []
+        if not component_validation_complete:
+            issues.append("One or more business-summary SQL components failed validation or returned no rows.")
+        if not analysis_consistent:
+            issues.append("Combined business-summary coverage and evidence metadata are inconsistent or incomplete.")
+        elif not complete_coverage:
+            issues.append("Business-summary evidence coverage is partial; the complete analysis is not verified.")
+
+        return {
+            "verified": verified,
+            "validated_component_count": sum(
+                item.get("status") == "validated"
+                and item.get("sql_validated") is True
+                and item.get("result_nonempty") is True
+                for item in component_rows
+            ),
+            "component_count": len(expected_areas),
+            "component_queries": [
+                {
+                    "area": area,
+                    "status": component_by_area.get(area, {}).get("status", "missing"),
+                    "query_intent": component_by_area.get(area, {}).get("query_intent"),
+                    "sql_validated": component_by_area.get(area, {}).get("sql_validated") is True,
+                    "result_nonempty": component_by_area.get(area, {}).get("result_nonempty") is True,
+                }
+                for area in expected_areas
+            ],
+            "coverage_status": status if status in {"complete", "partial", "insufficient_evidence"} else "invalid",
+            "coverage": [
+                {"area": area, "status": coverage_by_area.get(area, "unavailable")}
+                for area in expected_areas
+            ],
+            "analysis_consistent": analysis_consistent,
+            "consistency_scope": "Coverage, validated-result references, and row-count metadata were cross-checked.",
+            "issues": issues,
+        }
+
     def _verify_sql(
         self,
         answer: str,

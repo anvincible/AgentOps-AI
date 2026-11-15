@@ -58,6 +58,7 @@ class Retriever:
         query: str,
         top_k: int = 5,
         document_types: list[str] | None = None,
+        department: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search document chunks semantically, then rerank them."""
 
@@ -78,18 +79,26 @@ class Retriever:
         if not set(requested_types).issubset(allowed_document_types):
             raise ValueError("Unsupported document type metadata filter.")
 
+        requested_department = department.strip() if department else ""
+
         type_filter = ""
-        params: tuple[Any, ...]
+        filters: list[str] = []
+        filter_params: list[Any] = []
         if requested_types:
-            type_filter = " AND document_type = ANY(%s)"
-            params = (
-                query_vector,
-                requested_types,
-                query_vector,
-                candidate_limit,
-            )
-        else:
-            params = (query_vector, query_vector, candidate_limit)
+            filters.append("document_type = ANY(%s)")
+            filter_params.append(requested_types)
+        if requested_department:
+            filters.append("department = %s")
+            filter_params.append(requested_department)
+        if filters:
+            type_filter = " AND " + " AND ".join(filters)
+
+        params = (
+            query_vector,
+            *filter_params,
+            query_vector,
+            candidate_limit,
+        )
 
         search_query = """
             SELECT

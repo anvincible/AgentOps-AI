@@ -38,6 +38,7 @@ app.add_middleware(
 class QuestionRequest(BaseModel):
     question: str
     clarification_context: dict[str, Any] | None = None
+    department: str | None = None
 
 
 class ReportRequest(BaseModel):
@@ -51,6 +52,7 @@ class Source(BaseModel):
     document_id: str | None = None
     filename: str | None = None
     document_type: str | None = None
+    department: str | None = None
     page_number: int | None = None
     paragraph_number: int | None = None
     chunk_id: str | None = None
@@ -100,10 +102,12 @@ def ask_question(
         )
 
     try:
-        result = orchestrator.answer(
-            request.question,
-            clarification_context=request.clarification_context,
-        )
+        answer_options: dict[str, Any] = {
+            "clarification_context": request.clarification_context,
+        }
+        if request.department and request.department.strip():
+            answer_options["department"] = request.department.strip()
+        result = orchestrator.answer(request.question, **answer_options)
 
         sources = []
 
@@ -133,6 +137,7 @@ def ask_question(
                     "filename": item.get("filename"),
                     "title": item.get("title"),
                     "document_type": item.get("document_type"),
+                    "department": item.get("department"),
                     "page_number": item.get("page_number"),
                     "paragraph_number": item.get("paragraph_number"),
                     "chunk_id": item.get("chunk_id"),

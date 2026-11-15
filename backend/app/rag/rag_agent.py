@@ -39,7 +39,11 @@ class RAGAgent:
         )
         self.top_k = top_k
 
-    def retrieve(self, question: str) -> dict[str, Any]:
+    def retrieve(
+        self,
+        question: str,
+        department: str | None = None,
+    ) -> dict[str, Any]:
         """Retrieve and rank evidence for a question."""
 
         if not question or not question.strip():
@@ -55,6 +59,8 @@ class RAGAgent:
         # explicitly asks for a metadata document type.
         if document_types:
             search_options["document_types"] = document_types
+        if department and department.strip():
+            search_options["department"] = department.strip()
 
         results = self.retriever.search(**search_options)
         results = [
@@ -77,6 +83,7 @@ class RAGAgent:
                     "filename": item.get("filename"),
                     "title": item.get("title"),
                     "document_type": item.get("document_type"),
+                    "department": item.get("department"),
                     "page_number": item.get("page_number"),
                     "paragraph_number": item.get("paragraph_number"),
                     "chunk_id": item.get("chunk_id"),

@@ -31,6 +31,7 @@ def test_rag_retrieval_returns_ranked_evidence_and_source_metadata():
                     "filename": "campaign.docx",
                     "title": "Campaign CMP-021",
                     "document_type": "report",
+                    "department": "Marketing / Business Operations",
                     "page_number": None,
                     "paragraph_number": 3,
                     "related_entity_ids": ["CMP-021"],
@@ -55,6 +56,7 @@ def test_rag_retrieval_returns_ranked_evidence_and_source_metadata():
             "filename": "campaign.docx",
             "title": "Campaign CMP-021",
             "document_type": "report",
+            "department": "Marketing / Business Operations",
             "page_number": None,
             "paragraph_number": 3,
             "chunk_id": "DOC-1-001",
@@ -361,6 +363,153 @@ def test_document_type_filter_requires_explicit_request():
     assert RAGAgent._explicit_document_type_filter(
         "What does the return policy say?"
     ) is None
+
+
+@pytest.mark.unit
+def test_department_filter_is_forwarded_and_preserves_source_attribution():
+    class FakeRetriever:
+        def search(self, query, top_k, **filters):
+            assert filters == {"department": "Marketing / Business Operations"}
+            return [{
+                "chunk_id": "DOC-MKT-024-006",
+                "document_id": "DOC-MKT-024",
+                "filename": "cmp021_postmortem.docx",
+                "title": "CMP-021 Campaign Postmortem",
+                "document_type": "MARKETING",
+                "department": "Marketing / Business Operations",
+                "related_entity_ids": ["CMP-021"],
+                "content": "CMP-021 campaign strategy and conversion results.",
+                "similarity": 0.8,
+            }]
+
+    agent = RAGAgent.__new__(RAGAgent)
+    agent.retriever = FakeRetriever()
+    agent.top_k = 1
+    result = agent.retrieve(
+        "What strategy was recommended for campaign CMP-021?",
+        department=" Marketing / Business Operations ",
+    )
+    assert result["sources"][0]["document_id"] == "DOC-MKT-024"
+    assert result["sources"][0]["department"] == "Marketing / Business Operations"
+    assert result["sources"][0]["chunk_id"] == "DOC-MKT-024-006"
+
+
+@pytest.mark.unit
+def test_retriever_parameterizes_department_with_document_type_filter(monkeypatch):
+    from contextlib import contextmanager
+
+    captured = {}
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params):
+            captured["query"] = query
+            captured["params"] = params
+
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    @contextmanager
+    def connect(_connection_string):
+        yield Connection()
+
+    monkeypatch.setattr("backend.app.rag.retriever.psycopg.connect", connect)
+    monkeypatch.setattr("backend.app.rag.retriever.register_vector", lambda _conn: None)
+    retriever = Retriever.__new__(Retriever)
+    retriever.connection_string = "unused"
+    retriever.embedder = type("Embedder", (), {"embed_text": lambda _self, _query: [0.0]})()
+    assert retriever.search(
+        "policy question", top_k=2, document_types=["POLICIES"],
+        department="Operations",
+    ) == []
+    assert "document_type = ANY(%s) AND department = %s" in captured["query"]
+    assert captured["params"][1:3] == (["POLICIES"], "Operations")
+    assert captured["params"][-1] == 25
+
+
+@pytest.mark.unit
+def test_retriever_without_department_keeps_unfiltered_query(monkeypatch):
+    from contextlib import contextmanager
+
+    captured = {}
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params):
+            captured["query"] = query
+            captured["params"] = params
+
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    @contextmanager
+    def connect(_connection_string):
+        yield Connection()
+
+    monkeypatch.setattr("backend.app.rag.retriever.psycopg.connect", connect)
+    monkeypatch.setattr("backend.app.rag.retriever.register_vector", lambda _conn: None)
+    retriever = Retriever.__new__(Retriever)
+    retriever.connection_string = "unused"
+    retriever.embedder = type("Embedder", (), {"embed_text": lambda _self, _query: [0.0]})()
+    assert retriever.search("policy question", top_k=2, department="   ") == []
+    assert "department =" not in captured["query"]
+    assert len(captured["params"]) == 3
+
+
+@pytest.mark.unit
+def test_unknown_department_is_passed_as_a_safe_filter(monkeypatch):
+    from contextlib import contextmanager
+
+    captured = {}
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params):
+            captured["query"] = query
+            captured["params"] = params
+
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    @contextmanager
+    def connect(_connection_string):
+        yield Connection()
+
+    monkeypatch.setattr("backend.app.rag.retriever.psycopg.connect", connect)
+    monkeypatch.setattr("backend.app.rag.retriever.register_vector", lambda _conn: None)
+    retriever = Retriever.__new__(Retriever)
+    retriever.connection_string = "unused"
+    retriever.embedder = type("Embedder", (), {"embed_text": lambda _self, _query: [0.0]})()
+    assert retriever.search("question", department="unknown department") == []
+    assert "unknown department" in captured["params"]
+    assert "department = %s" in captured["query"]
 
 
 @pytest.mark.unit

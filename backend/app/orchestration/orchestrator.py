@@ -55,6 +55,7 @@ class Orchestrator:
         self,
         question: str,
         clarification_context: dict[str, Any] | None = None,
+        department: str | None = None,
     ) -> dict[str, Any]:
         """Automatically route a question, compose an answer, and verify it."""
 
@@ -227,7 +228,13 @@ class Orchestrator:
         # Run the RAG agent when document evidence is needed.
         if route in ("RAG", "BOTH"):
             try:
-                response["rag"] = self.rag_agent.retrieve(question)
+                retrieval_options = {}
+                if department and department.strip():
+                    retrieval_options["department"] = department.strip()
+                response["rag"] = self.rag_agent.retrieve(
+                    question,
+                    **retrieval_options,
+                )
             except Exception as error:
                 if isinstance(error, ValueError):
                     logger.warning("RAG agent could not retrieve evidence: %s", error)

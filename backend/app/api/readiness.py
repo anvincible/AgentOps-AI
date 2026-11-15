@@ -18,8 +18,13 @@ def check_database_readiness(
     """Confirm PostgreSQL accepts a lightweight, read-only query."""
 
     try:
+        connection_config = dict(database_config)
+        database_name = connection_config.pop("database", None)
+        if database_name is not None:
+            connection_config["dbname"] = database_name
+
         with psycopg.connect(
-            **database_config,
+            **connection_config,
             connect_timeout=2,
         ) as connection:
             with connection.cursor() as cursor:

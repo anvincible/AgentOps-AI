@@ -59,7 +59,17 @@ def test_readiness_executes_select_one_with_short_connection_timeout(monkeypatch
 
     assert result == {"status": "ok", "service": "AgentOps AI"}
     assert connection.test_cursor.query == "SELECT 1"
-    assert calls == [{**config, "connect_timeout": 2}]
+    assert calls == [
+        {
+            "host": "clean-db",
+            "port": 5432,
+            "dbname": "novamart",
+            "user": "readonly_user",
+            "password": "test-only-password",
+            "connect_timeout": 2,
+        }
+    ]
+    assert "database" not in calls[0]
 
 
 def test_unhealthy_database_returns_generic_503_and_sanitized_log(

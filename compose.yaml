@@ -1,0 +1,54 @@
+name: agentops-novamart
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    init: true
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      # Clear the host DATABASE_URL so the shared loader uses the same DB_*
+      # values as the RAG retriever. Credentials come from Compose interpolation.
+      DATABASE_URL: ""
+      DB_HOST: host.docker.internal
+      DB_PORT: "5433"
+      DB_NAME: ${DB_NAME:-novamart}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env or shell environment}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      HF_HOME: /home/app/.cache/huggingface
+    volumes:
+      - huggingface-cache:/home/app/.cache/huggingface
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=4)"
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 5m
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend-angular/Dockerfile
+    init: true
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  huggingface-cache:

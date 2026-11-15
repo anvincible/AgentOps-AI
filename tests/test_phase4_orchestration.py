@@ -2,6 +2,7 @@ import pytest
 
 from backend.app.orchestration.orchestrator import Orchestrator
 from backend.app.orchestration.verification_agent import VerificationAgent
+from backend.app.orchestration.analysis_agent import AnalysisAgent
 from backend.app.sql.sql_reasoner import SQLReasoner
 
 
@@ -113,6 +114,7 @@ def _orchestrator(route, sql_error=None, rag_error=None, sql_result=None, rag_re
         obj.rag_agent.retrieve = lambda _question: {"evidence": [], "sources": []}
     obj.answer_composer = _Composer()
     obj.verification_agent = _Verifier()
+    obj.analysis_agent = AnalysisAgent()
     obj._route_question = lambda _question: route
     return obj
 

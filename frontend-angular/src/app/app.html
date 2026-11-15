@@ -226,6 +226,8 @@
                             <strong>Analysis</strong>
                             @if (analysis.status === 'complete') {
                               <span>SQL evidence · {{ analysis.evidence.row_count }} rows</span>
+                            } @else if (analysis.status === 'partial') {
+                              <span>Partial evidence coverage</span>
                             } @else {
                               <span>Insufficient evidence</span>
                             }
@@ -238,14 +240,28 @@
                               }
                             </ul>
                           }
+                          @if (analysis.coverage?.length) {
+                            <div class="analysis-coverage" aria-label="Business area coverage">
+                              @for (area of analysis.coverage; track area.area) {
+                                <span [class.coverage-available]="area.status === 'covered'">
+                                  {{ area.area }}: {{ area.status }}
+                                </span>
+                              }
+                            </div>
+                          }
                           @if (analysis.chart; as chart) {
                             <div class="analysis-chart" [attr.aria-label]="chart.series[0].name + ' ' + chart.type + ' chart'">
                               @if (chart.type === 'bar') {
-                                @for (label of chart.labels; track label; let index = $index) {
-                                  <div class="analysis-bar-row">
-                                    <span class="analysis-chart-label">{{ label }}</span>
-                                    <span class="analysis-bar-track"><span class="analysis-bar" [style.width.%]="chartBarWidth(chart, index)"></span></span>
-                                    <strong>{{ chartValue(chart, index) | number:'1.0-2' }}</strong>
+                                @for (series of chart.series; track series.name; let seriesIndex = $index) {
+                                  <div class="analysis-series">
+                                    <strong>{{ series.name }}</strong>
+                                    @for (label of chart.labels; track label; let index = $index) {
+                                      <div class="analysis-bar-row">
+                                        <span class="analysis-chart-label">{{ label }}</span>
+                                        <span class="analysis-bar-track"><span class="analysis-bar" [style.width.%]="chartBarWidth(chart, index, seriesIndex)"></span></span>
+                                        <strong>{{ chartValue(chart, index, seriesIndex) | number:'1.0-2' }}</strong>
+                                      </div>
+                                    }
                                   </div>
                                 }
                               } @else {

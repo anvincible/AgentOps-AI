@@ -31,6 +31,13 @@ describe('App', () => {
     prompt: 'Which supported dimension should I use: segment, location, loyalty tier, or acquisition channel?',
   };
 
+  const campaignComparisonClarification: ClarificationContext = {
+    original_question: 'Compare campaign performance and highlight important differences.',
+    kind: 'campaign_comparison_targets',
+    options: [],
+    prompt: 'Which two campaigns should I compare? Please provide two campaign IDs, such as CMP-021 and CMP-022.',
+  };
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
@@ -163,6 +170,54 @@ describe('App', () => {
     request.flush({ route: 'SQL', answer: 'A verified product ranking.', clarification: null });
     fixture.detectChanges();
     expect(app.pendingClarification).toBeNull();
+  });
+
+  it('sends two typed campaign IDs with the campaign clarification context', () => {
+    const { fixture, app } = createApp();
+    requestClarification(
+      fixture,
+      app,
+      campaignComparisonClarification.original_question,
+      campaignComparisonClarification,
+    );
+    expect((fixture.nativeElement as HTMLElement).querySelector('.clarification-option'))
+      .toBeNull();
+
+    app.question = 'CMP-021 and CMP-022';
+    app.sendQuestion();
+    const request = http.expectOne('/api/ask');
+    expect(request.request.body).toEqual({
+      question: 'CMP-021 and CMP-022',
+      clarification_context: campaignComparisonClarification,
+    });
+    request.flush({
+      route: 'SQL',
+      answer: 'Campaign 021 and Campaign 022 results.',
+      verification: { verified: true, route: 'SQL' },
+      clarification: null,
+      analysis: {
+        status: 'complete',
+        summary: 'Compared returned campaign rows.',
+        insights: [],
+        chart: {
+          type: 'bar',
+          metric: 'campaign_metrics',
+          labels: ['Campaign 021', 'Campaign 022'],
+          series: [
+            { name: 'Revenue Generated', metric: 'revenue_generated', values: [1500, 1800] },
+            { name: 'Conversions', metric: 'conversions', values: [10, 12] },
+          ],
+        },
+        evidence: { source: 'NovaMart PostgreSQL database', validated: true, row_count: 2 },
+        limitations: [],
+      },
+    });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(app.pendingClarification).toBeNull();
+    expect(element.querySelectorAll('.analysis-series').length).toBe(2);
+    expect(element.querySelector('.analysis-card')?.textContent).toContain('Campaign 021');
   });
 
   it('does not send stale clarification context with an unrelated question', () => {

@@ -948,10 +948,42 @@
   line-height: 1.55;
 }
 
+.analysis-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.analysis-coverage span {
+  padding: 4px 7px;
+  border: 1px solid #e4b96b;
+  border-radius: 12px;
+  color: #835916;
+  background: #fff8e8;
+  font-size: 10px;
+}
+
+.analysis-coverage .coverage-available {
+  border-color: #9bd5bf;
+  color: #246747;
+  background: #edfaf4;
+}
+
 .analysis-chart {
   display: grid;
   gap: 9px;
   margin-top: 12px;
+}
+
+.analysis-series {
+  display: grid;
+  gap: 6px;
+}
+
+.analysis-series > strong {
+  color: #52647e;
+  font-size: 11px;
 }
 
 .analysis-bar-row {

@@ -45,15 +45,16 @@ interface AnalysisChart {
   type: 'bar' | 'line';
   metric: string;
   labels: string[];
-  series: { name: string; values: number[] }[];
+  series: { name: string; metric?: string; values: number[] }[];
 }
 
 interface AnalysisResult {
-  status: 'complete' | 'insufficient_evidence';
+  status: 'complete' | 'partial' | 'insufficient_evidence';
   summary: string;
   insights: string[];
   chart: AnalysisChart | null;
   evidence: { source?: string; query_intent?: string; validated?: boolean; row_count?: number };
+  coverage?: { area: string; status: string }[];
   limitations: string[];
 }
 
@@ -279,18 +280,18 @@ export class App implements OnInit {
     return option.replace(/\b\w/g, (character) => character.toUpperCase());
   }
 
-  chartValue(chart: AnalysisChart, index: number): number {
-    return chart.series[0]?.values[index] ?? 0;
+  chartValue(chart: AnalysisChart, index: number, seriesIndex = 0): number {
+    return chart.series[seriesIndex]?.values[index] ?? 0;
   }
 
   formatMetric(metric: string): string {
     return metric.replaceAll('_', ' ');
   }
 
-  chartBarWidth(chart: AnalysisChart, index: number): number {
-    const values = chart.series[0]?.values ?? [];
+  chartBarWidth(chart: AnalysisChart, index: number, seriesIndex = 0): number {
+    const values = chart.series[seriesIndex]?.values ?? [];
     const max = Math.max(...values.map((value) => Math.abs(value)), 0);
-    return max === 0 ? 0 : Math.max(2, Math.abs(this.chartValue(chart, index)) / max * 100);
+    return max === 0 ? 0 : Math.max(2, Math.abs(this.chartValue(chart, index, seriesIndex)) / max * 100);
   }
 
   lineChartPoints(chart: AnalysisChart): string {
@@ -339,6 +340,12 @@ export class App implements OnInit {
     reply: string,
     context: ClarificationContext,
   ): boolean {
+    if (context.kind === 'campaign_comparison_targets') {
+      const match = reply.match(
+        /^\s*(?:compare\s+)?(?:campaign\s+)?(CMP-\d+)\s*(?:,|and|&)\s*(?:campaign\s+)?(CMP-\d+)\s*[.!]?\s*$/i,
+      );
+      return Boolean(match && match[1].toUpperCase() !== match[2].toUpperCase());
+    }
     const normalized = this.normalizeClarificationText(reply);
     if (!normalized || normalized.split(' ').length > 6) {
       return false;

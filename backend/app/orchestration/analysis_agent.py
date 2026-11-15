@@ -74,10 +74,19 @@ class AnalysisAgent:
         insights: list[str] = []
         limitations: list[str] = []
         chart = None
+        status = "complete"
+
+        campaign_comparison = (
+            "campaign" in question_lower and self._asks_comparison(question_lower)
+        )
 
         if self._is_monthly(records):
             records.sort(key=lambda row: self._label(row.get("sales_month", row.get("month"))))
-        if self._is_monthly(records) and not self._asks_comparison(question_lower):
+        if campaign_comparison and len(records) >= 2 and all(
+            "campaign_id" in row and "campaign_name" in row for row in records
+        ):
+            chart, insights = self._compare_campaigns(records)
+        elif self._is_monthly(records) and not self._asks_comparison(question_lower):
             metric = self._select_metric(records, question_lower)
             if metric:
                 chart = self._chart(records, metric, "line")
@@ -126,6 +135,15 @@ class AnalysisAgent:
                         f"{right_label} {self._display(after, metric)}."
                     )
         else:
+            if campaign_comparison:
+                note = (
+                    "Campaign-to-campaign comparison is unavailable: the SQL result "
+                    "contains aggregate metrics, not separate labeled campaign rows."
+                )
+                insights.append(note)
+                limitations.append(note)
+                status = "partial"
+
             # KPI values are only reported when they are present in the returned rows.
             if len(records) == 1:
                 record = records[0]
@@ -160,11 +178,183 @@ class AnalysisAgent:
             "No values or missing time periods were inferred."
         )
         return {
-            "status": "complete",
+            "status": status,
             "summary": summary,
             "insights": insights,
             "chart": chart,
             "evidence": evidence,
+            "limitations": limitations,
+        }
+
+    @classmethod
+    def _compare_campaigns(
+        cls, records: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any] | None, list[str]]:
+        labels = [str(row.get("campaign_name") or row["campaign_id"]) for row in records]
+        metric_fields = ("actual_spend", "revenue_generated", "conversions", "clicks")
+        series = []
+        insights = []
+        for field in metric_fields:
+            values = [cls._number(row.get(field)) for row in records]
+            if any(value is None for value in values):
+                continue
+            numeric_values = [value for value in values if value is not None]
+            series.append({
+                "name": field.replace("_", " ").title(),
+                "metric": field,
+                "values": [round(value, 6) for value in numeric_values],
+            })
+            first, second = numeric_values[0], numeric_values[1]
+            change = second - first
+            pct = cls._percent_change(first, second)
+            direction = "higher" if change > 0 else "lower" if change < 0 else "the same"
+            pct_text = (
+                f" ({abs(pct):,.2f}%)" if pct is not None
+                else " (percentage change undefined because the first value is zero)"
+            )
+            insights.append(
+                f"{labels[1]} has {cls._display(abs(change), field)} {direction} {field.replace('_', ' ')} "
+                f"than {labels[0]}{pct_text}; values: {labels[0]} {cls._display(first, field)}, "
+                f"{labels[1]} {cls._display(second, field)}."
+            )
+        chart = ({
+            "type": "bar",
+            "metric": "campaign_metrics",
+            "labels": labels,
+            "series": series,
+        } if series else None)
+        return chart, insights
+
+    def analyze_business_summary(
+        self,
+        validated_results: list[dict[str, Any]],
+        unavailable_areas: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Summarize selected KPI families from existing validated SQL results."""
+        area_order = ("Sales", "Customers", "Returns", "Campaigns")
+        by_intent = {
+            "SALES_SUMMARY": "Sales",
+            "CUSTOMER_COUNT": "Customers",
+            "RETURN_RATE": "Returns",
+            "CAMPAIGN_PERFORMANCE": "Campaigns",
+            "CAMPAIGN_SUMMARY": "Campaigns",
+        }
+        fields_by_area = {
+            "Sales": ("order_count", "total_revenue", "average_order_value"),
+            "Customers": ("customer_count",),
+            "Returns": ("return_count", "order_count", "return_rate_percent"),
+            "Campaigns": (
+                "campaign_count", "total_spend", "total_revenue",
+                "total_conversions", "total_clicks",
+            ),
+        }
+        area_metrics: dict[str, dict[str, Any]] = {}
+        area_missing_fields: dict[str, list[str]] = {}
+        evidence_items: list[dict[str, Any]] = []
+        for item in validated_results:
+            result = item.get("result") if isinstance(item, dict) else None
+            if not isinstance(result, dict) or not (item.get("validation") or {}).get("valid"):
+                continue
+            columns, rows = result.get("columns") or [], result.get("rows") or []
+            if not columns or not rows:
+                continue
+            plan = item.get("query_plan") or {}
+            intent = str(plan.get("intent") or "UNKNOWN")
+            area = by_intent.get(intent)
+            if not area:
+                continue
+            record = self._record(columns, rows[0])
+            expected_fields = fields_by_area[area]
+            values = {
+                field: self._number(record.get(field))
+                for field in expected_fields if field in record
+            }
+            values = {field: value for field, value in values.items() if value is not None}
+            if not values:
+                area_missing_fields[area] = list(expected_fields)
+                continue
+            area_metrics[area] = values
+            area_missing_fields[area] = [
+                field for field in expected_fields if field not in values
+            ]
+            if (
+                area == "Campaigns"
+                and values.get("total_spend") == 0
+                and "total_revenue" in values
+            ):
+                area_missing_fields[area].append("roi_zero_spend")
+            evidence_items.append({
+                "area": area,
+                "query_intent": intent,
+                "validated": True,
+                "row_count": len(rows),
+                "fields": list(columns),
+            })
+
+        insights: list[str] = []
+        for area in area_order:
+            values = area_metrics.get(area)
+            if not values:
+                continue
+            parts = [
+                f"{field.replace('_', ' ').title()}: {self._display(value, field)}"
+                for field, value in values.items()
+            ]
+            if area == "Campaigns":
+                spend = values.get("total_spend")
+                revenue = values.get("total_revenue")
+                if spend is not None and revenue is not None and spend != 0:
+                    roi = (revenue - spend) / spend * 100
+                    parts.append(f"ROI: {roi:,.2f}%")
+            insights.append(f"{area}: " + "; ".join(parts) + ".")
+
+        unavailable = list(dict.fromkeys(unavailable_areas or []))
+        unavailable.extend(area for area in area_order if area not in area_metrics and area not in unavailable)
+        limitations = [f"KPI evidence unavailable for: {', '.join(unavailable)}."] if unavailable else []
+        for area in area_order:
+            missing = area_missing_fields.get(area, [])
+            if not missing or area not in area_metrics:
+                continue
+            if "roi_zero_spend" in missing:
+                limitations.append("Campaign ROI could not be calculated because aggregate campaign spend is zero.")
+                missing = [field for field in missing if field != "roi_zero_spend"]
+            if missing:
+                limitations.append(
+                    f"{area} KPI fields unavailable: "
+                    + ", ".join(field.replace("_", " ") for field in missing)
+                    + "."
+                )
+        covered = [area for area in area_order if area in area_metrics]
+        coverage = []
+        for area in area_order:
+            if area not in area_metrics:
+                area_status = "unavailable"
+            elif area_missing_fields.get(area):
+                area_status = "partial"
+            else:
+                area_status = "covered"
+            coverage.append({"area": area, "status": area_status})
+        status = (
+            "complete" if all(item["status"] == "covered" for item in coverage)
+            else "partial" if covered else "insufficient_evidence"
+        )
+        return {
+            "status": status,
+            "summary": (
+                f"Retrieved some KPI evidence for {len(covered)} of {len(area_order)} requested business areas; "
+                f"{sum(item['status'] == 'covered' for item in coverage)} areas have complete KPI coverage."
+            ),
+            "insights": insights,
+            "chart": None,
+            "coverage": coverage,
+            "evidence": {
+                "source": "NovaMart PostgreSQL database",
+                "validated": bool(evidence_items) and len(evidence_items) == len(covered),
+                "row_count": sum(item["row_count"] for item in evidence_items),
+                "query_intents": [item["query_intent"] for item in evidence_items],
+                "results": evidence_items,
+                "document_sources": [],
+            },
             "limitations": limitations,
         }
 

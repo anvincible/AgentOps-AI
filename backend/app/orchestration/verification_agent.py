@@ -90,6 +90,33 @@ class VerificationAgent:
             checks.append("SQL query passed validation.")
 
         rows = (sql_result.get("result") or {}).get("rows", [])
+        plan = sql_result.get("query_plan", {})
+        campaign_comparison_requested = (
+            "campaign" in question.casefold()
+            and bool(re.search(r"\b(compare|comparison|difference|differences|contrast)\b", question, re.IGNORECASE))
+        )
+        if campaign_comparison_requested:
+            columns = (sql_result.get("result") or {}).get("columns", [])
+            if len(rows) < 2 or "campaign_id" not in columns:
+                issues.append(
+                    "Campaign comparison requires at least two separately labeled campaign rows; aggregate evidence is insufficient."
+                )
+            else:
+                campaign_index = columns.index("campaign_id")
+                try:
+                    campaign_ids = {row[campaign_index] for row in rows}
+                except (TypeError, IndexError):
+                    campaign_ids = set()
+                if len(campaign_ids) < 2:
+                    issues.append(
+                        "Campaign comparison rows do not identify at least two distinct campaigns."
+                    )
+                elif plan.get("entity_ids") and campaign_ids != set(plan["entity_ids"]):
+                    issues.append(
+                        "Campaign comparison rows do not match the requested campaign IDs."
+                    )
+                else:
+                    checks.append("Campaign comparison uses separately labeled campaign rows.")
         if not rows:
             issues.append("SQL route returned no result rows.")
         else:
@@ -124,7 +151,6 @@ class VerificationAgent:
             else:
                 checks.append("SQL answer values match the returned rows.")
 
-            plan = sql_result.get("query_plan", {})
             metric = self.RANKING_METRICS.get(plan.get("intent"))
             if plan.get("intent") == "CAMPAIGN_RANKING":
                 campaign_metrics = {

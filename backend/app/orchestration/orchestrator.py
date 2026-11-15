@@ -114,17 +114,53 @@ class Orchestrator:
 
         # Run the SQL agent when structured data is needed.
         sql_error: str | None = None
+        business_summary = self._is_business_summary_question(question)
 
         if route in ("SQL", "BOTH"):
-            try:
-                response["sql"] = self.sql_agent.answer(question)
-            except Exception as error:
-                if isinstance(error, ValueError):
-                    logger.warning("SQL agent rejected a query: %s", error)
-                    sql_error = "The requested structured-data query is not supported."
-                else:
-                    logger.exception("SQL agent failed while processing a question")
-                    sql_error = "The database query could not be completed."
+            if business_summary:
+                summary_queries = (
+                    ("Sales", "What is total sales revenue and average order value?"),
+                    ("Customers", "How many customers are there?"),
+                    ("Returns", "What is the return rate?"),
+                    ("Campaigns", "Show campaign performance."),
+                )
+                validated_results: list[dict[str, Any]] = []
+                unavailable_areas: list[str] = []
+                for area, summary_query in summary_queries:
+                    try:
+                        result = self.sql_agent.answer(summary_query)
+                    except Exception as error:
+                        logger.warning("Business summary query failed for %s (%s)", area, type(error).__name__)
+                        unavailable_areas.append(area)
+                        continue
+                    validation = result.get("validation") if isinstance(result, dict) else None
+                    sql_data = result.get("result") if isinstance(result, dict) else None
+                    if (
+                        isinstance(validation, dict)
+                        and validation.get("valid") is True
+                        and isinstance(sql_data, dict)
+                        and sql_data.get("columns")
+                        and sql_data.get("rows")
+                    ):
+                        validated_results.append(result)
+                        response.setdefault("sql", result)
+                    else:
+                        unavailable_areas.append(area)
+                response["analysis"] = self.analysis_agent.analyze_business_summary(
+                    validated_results, unavailable_areas
+                )
+                if not validated_results:
+                    sql_error = "No business-summary query returned validated structured results."
+            else:
+                try:
+                    response["sql"] = self.sql_agent.answer(question)
+                except Exception as error:
+                    if isinstance(error, ValueError):
+                        logger.warning("SQL agent rejected a query: %s", error)
+                        sql_error = "The requested structured-data query is not supported."
+                    else:
+                        logger.exception("SQL agent failed while processing a question")
+                        sql_error = "The database query could not be completed."
 
         if route == "SQL" and sql_error:
             unsupported_answer = (
@@ -161,6 +197,7 @@ class Orchestrator:
                 "answer": unsupported_answer,
                 "sources": [],
                 "verification": verification,
+                "analysis": response.get("analysis"),
             }
 
         # Run the RAG agent when document evidence is needed.
@@ -176,7 +213,7 @@ class Orchestrator:
                     response["rag_error"] = "Document retrieval could not be completed."
 
         # Analysis consumes existing validated SQL rows; it never issues queries.
-        if route in ("SQL", "BOTH"):
+        if route in ("SQL", "BOTH") and not business_summary:
             response["analysis"] = self.analysis_agent.analyze(
                 response.get("sql"), question, response.get("rag")
             )
@@ -213,6 +250,13 @@ class Orchestrator:
     @staticmethod
     def _clarification_metadata(question: str, prompt: str) -> dict[str, Any]:
         text = question.lower()
+        if "campaign" in text and re.search(r"\b(compare|comparison|difference|differences|contrast)\b", text):
+            return {
+                "original_question": question,
+                "kind": "campaign_comparison_targets",
+                "options": [],
+                "prompt": prompt,
+            }
         if "product" in text and re.search(r"\b(best|top|highest|rank|ranking)\b", text):
             return {
                 "original_question": question,
@@ -247,6 +291,16 @@ class Orchestrator:
         options = context.get("options")
         if not isinstance(original, str) or not original.strip() or not isinstance(options, list):
             return None
+        if kind == "campaign_comparison_targets":
+            match = re.fullmatch(
+                r"\s*(?:compare\s+)?(?:campaign\s+)?(CMP-\d+)\s*(?:,|and|&)\s*"
+                r"(?:campaign\s+)?(CMP-\d+)\s*[.!]?\s*",
+                reply,
+                re.IGNORECASE,
+            )
+            if not match or match.group(1).upper() == match.group(2).upper():
+                return None
+            return f"Compare campaigns {match.group(1).upper()} and {match.group(2).upper()}."
         normalized = re.sub(r"[^a-z0-9 ]", " ", reply.lower()).strip()
         normalized = re.sub(r"\s+", " ", normalized)
         if len(normalized.split()) > 6:
@@ -284,6 +338,15 @@ class Orchestrator:
 
     def _clarification_needed(self, question: str) -> str | None:
         text = re.sub(r"\s+", " ", question.lower()).strip()
+        if "campaign" in text and re.search(
+            r"\b(compare|comparison|difference|differences|contrast)\b", text
+        ):
+            campaign_ids = {
+                campaign_id.upper()
+                for campaign_id in re.findall(r"\bCMP-\d+\b", question, re.IGNORECASE)
+            }
+            if len(campaign_ids) != 2:
+                return "Which two campaigns should I compare? Please provide two campaign IDs, such as CMP-021 and CMP-022."
         if re.search(r"\b(age|gender|income)\b", text):
             requested = re.search(r"\b(age|gender|income)\b", text).group(1)
             customer_columns = {
@@ -369,6 +432,18 @@ class Orchestrator:
         return None
 
     @staticmethod
+    def _is_business_summary_question(question: str) -> bool:
+        text = re.sub(r"\s+", " ", question.casefold()).strip()
+        summary_requested = bool(re.search(
+            r"\b(summarize|summarise|summary|overview|snapshot)\b", text
+        )) or "business performance" in text
+        business_scope = bool(re.search(r"\b(novamart|business|overall)\b", text))
+        specific_entity = bool(re.search(
+            r"\b(campaign|product|customer|return|seller|shipment|payment|ticket)\b", text
+        ))
+        return summary_requested and business_scope and not specific_entity
+
+    @staticmethod
     def _contains_term(question: str, terms: set[str]) -> bool:
         """Match complete phrases or words, not accidental substrings."""
 
@@ -410,6 +485,9 @@ class Orchestrator:
 
         if normalized in chat_phrases:
             return "CHAT"
+
+        if Orchestrator._is_business_summary_question(question):
+            return "SQL"
 
         sql_terms = {
             "how many",
@@ -517,6 +595,16 @@ class Orchestrator:
             "campaign" in text
             or bool(re.search(r"\bCMP-\d+\b", text, re.IGNORECASE))
         )
+        campaign_comparison = (
+            campaign_related
+            and bool(re.search(r"\b(compare|comparison|difference|differences|contrast)\b", text))
+        )
+        comparison_ids = {
+            campaign_id.upper()
+            for campaign_id in re.findall(r"\bCMP-\d+\b", text, re.IGNORECASE)
+        }
+        if campaign_comparison and len(comparison_ids) >= 2:
+            return "SQL"
 
         explanation_signal = Orchestrator._contains_term(
             text,

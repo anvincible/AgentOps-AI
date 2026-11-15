@@ -363,21 +363,28 @@ describe('App', () => {
     }
   });
 
-  it('shows one understandable report error and resets loading after failure', () => {
+  it('shows one understandable report error and resets loading after failure', async () => {
     const { fixture, app } = createApp();
     app.downloadReport();
     const request = http.expectOne('/api/reports');
     expect(app.reportLoading).toBe(true);
     request.flush(
-      { detail: 'Report unavailable.' },
-      { status: 500, statusText: 'Server Error' },
+      new Blob([JSON.stringify({ detail: 'Report unavailable.' })], {
+        type: 'application/json',
+      }),
+      {
+        status: 500,
+        statusText: 'Server Error',
+        headers: new HttpHeaders({ 'Content-Type': 'application/json' }),
+      },
     );
+    await vi.waitFor(() => expect(app.reportError).toBe('Report unavailable.'));
     fixture.detectChanges();
 
     expect(app.reportLoading).toBe(false);
-    expect(app.reportError).toContain('Could not generate the report');
-    expect((fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')?.textContent)
-      .toContain('Could not generate the report');
+    const alerts = (fixture.nativeElement as HTMLElement).querySelectorAll('[role="alert"]');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent?.trim()).toBe('Report unavailable.');
   });
 
   it('does not send stale clarification context with an unrelated question', () => {

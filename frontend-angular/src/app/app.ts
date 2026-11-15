@@ -195,10 +195,34 @@ export class App implements OnInit {
           link.remove();
           URL.revokeObjectURL(objectUrl);
         },
-        error: () => {
-          this.reportError = 'Could not generate the report. Check the API connection and try again.';
+        error: (error: unknown) => {
+          void this.getReportErrorMessage(error).then((message) => {
+            this.reportError = message;
+            this.changeDetector.detectChanges();
+          });
         },
       });
+  }
+
+  private async getReportErrorMessage(error: unknown): Promise<string> {
+    const fallback = 'Could not generate the report. Check the API connection and try again.';
+    if (!(error instanceof HttpErrorResponse)) {
+      return fallback;
+    }
+
+    if (error.error instanceof Blob && error.error.type.includes('json')) {
+      try {
+        const body = JSON.parse(await error.error.text()) as { detail?: unknown };
+        if (typeof body.detail === 'string' && body.detail.trim()) {
+          return body.detail;
+        }
+      } catch {
+        return fallback;
+      }
+    }
+
+    const detail = error.error?.detail;
+    return typeof detail === 'string' && detail.trim() ? detail : fallback;
   }
 
   private reportFilename(contentDisposition: string | null): string {

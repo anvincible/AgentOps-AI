@@ -7,6 +7,7 @@ from backend.app.sql.sql_agent import SQLAgent
 from backend.app.rag.rag_agent import RAGAgent
 from backend.app.orchestration.answer_composer import AnswerComposer
 from backend.app.orchestration.verification_agent import VerificationAgent
+from backend.app.orchestration.analysis_agent import AnalysisAgent
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class Orchestrator:
 
         self.answer_composer = AnswerComposer()
         self.verification_agent = VerificationAgent()
+        self.analysis_agent = AnalysisAgent()
 
     def answer(
         self,
@@ -172,6 +174,12 @@ class Orchestrator:
                 else:
                     logger.exception("RAG agent failed while processing a question")
                     response["rag_error"] = "Document retrieval could not be completed."
+
+        # Analysis consumes existing validated SQL rows; it never issues queries.
+        if route in ("SQL", "BOTH"):
+            response["analysis"] = self.analysis_agent.analyze(
+                response.get("sql"), question, response.get("rag")
+            )
 
         # Compose the final answer from the agent results.
         response["answer"] = self.answer_composer.compose(response)

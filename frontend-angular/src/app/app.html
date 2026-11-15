@@ -219,6 +219,55 @@
                         ></div>
                       }
 
+                      @if (message.analysis; as analysis) {
+                        <section class="analysis-card" aria-label="Evidence-based business analysis">
+                          <div class="analysis-heading">
+                            <i class="pi pi-chart-line"></i>
+                            <strong>Analysis</strong>
+                            @if (analysis.status === 'complete') {
+                              <span>SQL evidence · {{ analysis.evidence.row_count }} rows</span>
+                            } @else {
+                              <span>Insufficient evidence</span>
+                            }
+                          </div>
+                          <p class="analysis-summary">{{ analysis.summary }}</p>
+                          @if (analysis.insights.length) {
+                            <ul class="analysis-insights">
+                              @for (insight of analysis.insights; track insight) {
+                                <li>{{ insight }}</li>
+                              }
+                            </ul>
+                          }
+                          @if (analysis.chart; as chart) {
+                            <div class="analysis-chart" [attr.aria-label]="chart.series[0].name + ' ' + chart.type + ' chart'">
+                              @if (chart.type === 'bar') {
+                                @for (label of chart.labels; track label; let index = $index) {
+                                  <div class="analysis-bar-row">
+                                    <span class="analysis-chart-label">{{ label }}</span>
+                                    <span class="analysis-bar-track"><span class="analysis-bar" [style.width.%]="chartBarWidth(chart, index)"></span></span>
+                                    <strong>{{ chartValue(chart, index) | number:'1.0-2' }}</strong>
+                                  </div>
+                                }
+                              } @else {
+                                <svg class="analysis-line-chart" viewBox="0 0 100 100" role="img" [attr.aria-label]="chart.series[0].name + ' line chart'">
+                                  <polyline [attr.points]="lineChartPoints(chart)" />
+                                  @for (label of chart.labels; track label; let index = $index) {
+                                    <circle [attr.cx]="lineChartX(chart, index)" [attr.cy]="lineChartY(chart, index)" r="2" />
+                                  }
+                                </svg>
+                                <div class="analysis-line-labels">
+                                  @for (label of chart.labels; track label) { <span>{{ label }}</span> }
+                                </div>
+                              }
+                              <small>Metric: {{ formatMetric(chart.metric) }}</small>
+                            </div>
+                          }
+                          @if (analysis.limitations.length) {
+                            <small class="analysis-limitation">{{ analysis.limitations.join(' ') }}</small>
+                          }
+                        </section>
+                      }
+
                       @if (
                         message.route === 'CLARIFY' &&
                         message.clarification &&

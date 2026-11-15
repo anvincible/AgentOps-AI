@@ -41,6 +41,22 @@ interface AskRequest {
   clarification_context?: ClarificationContext;
 }
 
+interface AnalysisChart {
+  type: 'bar' | 'line';
+  metric: string;
+  labels: string[];
+  series: { name: string; values: number[] }[];
+}
+
+interface AnalysisResult {
+  status: 'complete' | 'insufficient_evidence';
+  summary: string;
+  insights: string[];
+  chart: AnalysisChart | null;
+  evidence: { source?: string; query_intent?: string; validated?: boolean; row_count?: number };
+  limitations: string[];
+}
+
 interface AskResponse {
   question?: string;
   route?: string;
@@ -48,6 +64,7 @@ interface AskResponse {
   sources?: SourceDocument[];
   verification?: VerificationResult;
   clarification?: ClarificationContext | null;
+  analysis?: AnalysisResult | null;
 }
 
 interface ChatMessage {
@@ -57,6 +74,7 @@ interface ChatMessage {
   sources?: SourceDocument[];
   verification?: VerificationResult;
   clarification?: ClarificationContext;
+  analysis?: AnalysisResult;
   pending?: boolean;
 }
 
@@ -201,6 +219,7 @@ export class App implements OnInit {
             ? response.sources
             : [];
           assistantMessage.verification = response?.verification;
+          assistantMessage.analysis = response?.analysis ?? undefined;
           const clarification = response?.clarification;
           if (
             response?.route === 'CLARIFY' &&
@@ -258,6 +277,45 @@ export class App implements OnInit {
 
   formatClarificationOption(option: string): string {
     return option.replace(/\b\w/g, (character) => character.toUpperCase());
+  }
+
+  chartValue(chart: AnalysisChart, index: number): number {
+    return chart.series[0]?.values[index] ?? 0;
+  }
+
+  formatMetric(metric: string): string {
+    return metric.replaceAll('_', ' ');
+  }
+
+  chartBarWidth(chart: AnalysisChart, index: number): number {
+    const values = chart.series[0]?.values ?? [];
+    const max = Math.max(...values.map((value) => Math.abs(value)), 0);
+    return max === 0 ? 0 : Math.max(2, Math.abs(this.chartValue(chart, index)) / max * 100);
+  }
+
+  lineChartPoints(chart: AnalysisChart): string {
+    const values = chart.series[0]?.values ?? [];
+    if (!values.length) return '';
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    return values.map((value, index) => {
+      const x = values.length === 1 ? 50 : 5 + index * 90 / (values.length - 1);
+      const y = 90 - (value - min) / span * 80;
+      return `${x},${y}`;
+    }).join(' ');
+  }
+
+  lineChartY(chart: AnalysisChart, index: number): number {
+    const values = chart.series[0]?.values ?? [];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return values.length ? 90 - (this.chartValue(chart, index) - min) / (max - min || 1) * 80 : 90;
+  }
+
+  lineChartX(chart: AnalysisChart, index: number): number {
+    const count = chart.series[0]?.values.length ?? 0;
+    return count <= 1 ? 50 : 5 + index * 90 / (count - 1);
   }
 
   private isClarificationContext(

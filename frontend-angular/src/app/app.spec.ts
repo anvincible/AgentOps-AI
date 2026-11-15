@@ -246,6 +246,37 @@ describe('App', () => {
     expect(app.pendingClarification).toBeNull();
   });
 
+  it('renders evidence-grounded analysis and chart data when the API supplies it', () => {
+    const { fixture, app } = createApp();
+    app.question = 'Show monthly revenue trend';
+    app.sendQuestion();
+    http.expectOne('/api/ask').flush({
+      route: 'SQL',
+      answer: 'Monthly sales rows were returned.',
+      sources: [{ type: 'sql', title: 'NovaMart PostgreSQL database' }],
+      verification: { verified: true, route: 'SQL' },
+      analysis: {
+        status: 'complete',
+        summary: 'Analysis uses validated SQL rows.',
+        insights: ['Revenue increased 10.00%.'],
+        chart: {
+          type: 'line',
+          metric: 'total_revenue',
+          labels: ['2025-01', '2025-02'],
+          series: [{ name: 'Total Revenue', values: [100, 110] }],
+        },
+        evidence: { source: 'NovaMart PostgreSQL database', query_intent: 'SALES_BY_MONTH', validated: true, row_count: 2 },
+        limitations: [],
+      },
+    });
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('.analysis-card')?.textContent).toContain('Analysis uses validated SQL rows');
+    expect(element.querySelector('.analysis-card')?.textContent).toContain('Revenue increased 10.00%');
+    expect(element.querySelector('.analysis-line-chart polyline')?.getAttribute('points')).toBe('5,90 95,10');
+    expect(app.messages[1].analysis?.evidence.query_intent).toBe('SALES_BY_MONTH');
+  });
+
   it('shows server errors once without duplicating them in the error banner', () => {
     const { fixture, app } = createApp();
     app.question = 'A question that fails';

@@ -55,6 +55,7 @@ class QuestionResponse(BaseModel):
     sources: list[Source]
     verification: dict[str, Any] | None = None
     clarification: dict[str, Any] | None = None
+    analysis: dict[str, Any] | None = None
 
 
 orchestrator = Orchestrator(**load_database_config())
@@ -135,6 +136,7 @@ def ask_question(
             "sources": sources or result.get("sources", []),
             "verification": result.get("verification"),
             "clarification": result.get("clarification"),
+            "analysis": result.get("analysis"),
         }
 
     except ValueError as exc:

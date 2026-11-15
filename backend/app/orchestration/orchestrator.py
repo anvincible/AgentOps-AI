@@ -8,6 +8,7 @@ from backend.app.rag.rag_agent import RAGAgent
 from backend.app.orchestration.answer_composer import AnswerComposer
 from backend.app.orchestration.verification_agent import VerificationAgent
 from backend.app.orchestration.analysis_agent import AnalysisAgent
+from backend.app.safe_logging import log_sanitized_exception
 
 logger = logging.getLogger(__name__)
 
@@ -188,10 +189,19 @@ class Orchestrator:
                         response["sql"] = sql_result
                 except Exception as error:
                     if isinstance(error, ValueError):
-                        logger.warning("SQL agent rejected a query: %s", error)
+                        log_sanitized_exception(
+                            logger,
+                            "SQL agent rejected a query",
+                            error,
+                            level=logging.WARNING,
+                        )
                         sql_error = "The requested structured-data query is not supported."
                     else:
-                        logger.exception("SQL agent failed while processing a question")
+                        log_sanitized_exception(
+                            logger,
+                            "SQL agent failed while processing a question",
+                            error,
+                        )
                         sql_error = "The database query could not be completed."
 
         if route == "SQL" and sql_error:
@@ -246,10 +256,19 @@ class Orchestrator:
                 )
             except Exception as error:
                 if isinstance(error, ValueError):
-                    logger.warning("RAG agent could not retrieve evidence: %s", error)
+                    log_sanitized_exception(
+                        logger,
+                        "RAG agent could not retrieve evidence",
+                        error,
+                        level=logging.WARNING,
+                    )
                     response["rag_error"] = "The requested document evidence is unavailable."
                 else:
-                    logger.exception("RAG agent failed while processing a question")
+                    log_sanitized_exception(
+                        logger,
+                        "RAG agent failed while processing a question",
+                        error,
+                    )
                     response["rag_error"] = "Document retrieval could not be completed."
 
         # Analysis consumes existing validated SQL rows; it never issues queries.

@@ -9,8 +9,10 @@ from pydantic import BaseModel
 
 from backend.app.database_config import load_database_config
 from backend.app.api.report_endpoint import build_report_response
+from backend.app.api.readiness import check_database_readiness
 from backend.app.orchestration.orchestrator import Orchestrator
 from backend.app.orchestration.report_agent import ReportAgent
+from backend.app.safe_logging import log_sanitized_exception
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,16 @@ class QuestionResponse(BaseModel):
     analysis: dict[str, Any] | None = None
 
 
-orchestrator = Orchestrator(**load_database_config())
+database_config = load_database_config()
+try:
+    orchestrator = Orchestrator(**database_config)
+except Exception as exc:
+    log_sanitized_exception(
+        logger,
+        "Application initialization failed",
+        exc,
+    )
+    raise RuntimeError("Application initialization failed.") from None
 report_agent = ReportAgent()
 
 
@@ -79,6 +90,7 @@ def root() -> dict[str, str]:
         "status": "running",
         "docs": "/docs",
         "health": "/health",
+        "readiness": "/ready",
     }
 
 
@@ -88,6 +100,11 @@ def health() -> dict[str, str]:
         "status": "ok",
         "service": "AgentOps AI",
     }
+
+
+@app.get("/ready")
+def ready() -> dict[str, str]:
+    return check_database_readiness(database_config)
 
 
 @app.post("/ask", response_model=QuestionResponse)
@@ -159,11 +176,15 @@ def ask_question(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        logger.exception("Question orchestration failed")
+        log_sanitized_exception(
+            logger,
+            "Question orchestration failed",
+            exc,
+        )
         raise HTTPException(
             status_code=500,
             detail="Failed to process question. Please try again later.",
-        ) from exc
+        ) from None
 
 
 @app.post("/reports")
@@ -179,8 +200,12 @@ def create_report(request: ReportRequest) -> Response:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("Report generation failed")
+        log_sanitized_exception(
+            logger,
+            "Report generation failed",
+            exc,
+        )
         raise HTTPException(
             status_code=500,
             detail="Failed to generate the report. Please try again later.",
-        ) from exc
+        ) from None

@@ -144,23 +144,35 @@ def _campaign_metrics():
 def _campaign_strategy_evidence():
     evidence = [
         {
-            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-006",
+            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-004",
             "filename": "campaign_postmortem.docx", "title": "Campaign Postmortem CMP-021",
             "document_type": "MARKETING", "department": "Marketing / Business Operations",
             "related_entity_ids": ["CMP-021"], "similarity": 0.8,
             "content": (
-                "Future campaigns should compare conversion efficiency, customer segment quality, "
-                "and incremental revenue before increasing spend."
+                "Campaign CMP-021 (NovaMart Growth Campaign 21) recorded spend "
+                "of ₹1,840,000.00, revenue of ₹5,270,000.00, 3812 conversions, "
+                "and 47,919 clicks."
+            ),
+        },
+        {
+            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-006",
+            "filename": "campaign_postmortem.docx", "title": "Campaign Postmortem CMP-021",
+            "document_type": "MARKETING", "department": "Marketing / Business Operations",
+            "related_entity_ids": ["CMP-021"], "similarity": 0.75,
+            "content": (
+                "Target segment alignment, campaign objective, channel selection, and "
+                "conversion-oriented creative are factors to investigate. These are "
+                "analytical observations for the synthetic dataset, not proven causes."
             ),
         },
         {
             "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-008",
             "filename": "campaign_postmortem.docx", "title": "Campaign Postmortem CMP-021",
             "document_type": "MARKETING", "department": "Marketing / Business Operations",
-            "related_entity_ids": ["CMP-021"], "similarity": 0.75,
+            "related_entity_ids": ["CMP-021"], "similarity": 0.74,
             "content": (
-                "Target segment alignment, campaign objective, channel selection, and "
-                "conversion-oriented creative are factors to investigate."
+                "Future campaigns should compare conversion efficiency, customer segment quality, "
+                "and incremental revenue before increasing spend."
             ),
         },
         {
@@ -289,7 +301,7 @@ def test_hybrid_sql_success_rag_failure_returns_metrics_without_strategy_claims(
     assert result["verification"]["verified"] is False
 
 
-def test_hybrid_rag_success_sql_failure_returns_no_database_metrics():
+def test_hybrid_rag_success_sql_failure_attributes_metrics_to_postmortem():
     obj = _hybrid_orchestrator(
         sql_error=RuntimeError("private database stack detail"),
         rag_result=_campaign_strategy_evidence(),
@@ -299,7 +311,10 @@ def test_hybrid_rag_success_sql_failure_returns_no_database_metrics():
     assert "sql" not in result
     assert "Future campaigns should compare conversion efficiency" in result["answer"]
     assert "The database query could not be completed" in result["answer"]
-    assert "5,270,000" not in result["answer"]
+    # These figures are explicitly present in the successful postmortem source;
+    # the failed SQL agent is still reported as unavailable separately.
+    assert "5,270,000" in result["answer"]
+    assert "Campaign Postmortem CMP-021" in result["answer"]
     assert "private database stack detail" not in result["answer"]
     assert result["analysis"]["status"] == "insufficient_evidence"
     assert result["verification"]["verified"] is False

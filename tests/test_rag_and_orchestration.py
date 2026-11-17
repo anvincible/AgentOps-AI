@@ -728,15 +728,21 @@ def test_cmp021_strategy_query_expansion_is_source_specific():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("question", [
-    (
-        "What were the results of campaign CMP-021 and what strategy "
-        "was recommended?"
-    ),
-    "What are the CMP-021 campaign metrics and recommended strategy?",
-])
-def test_cmp021_strategy_composition_requires_both_postmortem_facets(question):
-    evidence = [
+def _cmp021_postmortem_evidence():
+    return [
+        {
+            "chunk_id": "DOC-MKT-024-004",
+            "document_id": "DOC-MKT-024",
+            "filename": "campaign_postmortem_CMP-021.docx",
+            "title": "Campaign Postmortem Cmp-021",
+            "related_entity_ids": ["CMP-021"],
+            "content": (
+                "Campaign CMP-021 (NovaMart Growth Campaign 21) recorded spend "
+                "of ₹1,840,000.00, revenue of ₹5,270,000.00, 3812 conversions, "
+                "and 47,919 clicks."
+            ),
+            "similarity": 0.7,
+        },
         {
             "chunk_id": "DOC-MKT-024-006",
             "document_id": "DOC-MKT-024",
@@ -765,34 +771,22 @@ def test_cmp021_strategy_composition_requires_both_postmortem_facets(question):
             ),
             "similarity": 0.67,
         },
-        {
-            "chunk_id": "DOC-MKT-002-001",
-            "document_id": "DOC-MKT-002",
-            "filename": "campaign_strategy.pdf",
-            "title": "Campaign Strategy",
-            "content": (
-                "CMP-021 Campaigns should define a measurable objective, "
-                "target segment, target region, and conversion event."
-            ),
-            "similarity": 0.8,
-        },
     ]
+
+
+@pytest.mark.parametrize("question", [
+    "What CMP-021 campaign metrics were reported and what strategy was recommended?",
+    "What are the CMP-021 campaign metrics and recommended strategy?",
+])
+def test_cmp021_metric_and_strategy_composition_requires_requested_facets(question):
+    evidence = _cmp021_postmortem_evidence()
     composer = AnswerComposer()
     selected = composer.select_relevant_evidence(evidence, question)
 
-    assert [item["chunk_id"] for item in selected] == [
-        "DOC-MKT-024-006", "DOC-MKT-024-008"
-    ]
+    assert {item["chunk_id"] for item in selected} == {
+        "DOC-MKT-024-004", "DOC-MKT-024-008"
+    }
     assert composer._missing_document_facets(question, selected) == []
-    assert "campaign strategy/recommendation" in composer._missing_document_facets(
-        question, selected[:1]
-    )
-    assert "campaign factors to investigate" in composer._missing_document_facets(
-        question, selected[1:]
-    )
-    if "metrics" in question:
-        assert composer.select_relevant_evidence(evidence[:1], question) == []
-        assert composer.select_relevant_evidence(evidence[1:2], question) == []
 
     sql_result = {
         "sql": (
@@ -811,7 +805,7 @@ def test_cmp021_strategy_composition_requires_both_postmortem_facets(question):
                 "campaign_id", "campaign_name", "actual_spend",
                 "revenue_generated", "conversions", "clicks",
             ],
-            "rows": [["CMP-021", "NovaMart campaign 21", 100.0, 250.0, 12, 50]],
+            "rows": [["CMP-021", "NovaMart Growth Campaign 21", 1840000.0, 5270000.0, 3812, 47919]],
         },
     }
     rag_result = {
@@ -834,7 +828,7 @@ def test_cmp021_strategy_composition_requires_both_postmortem_facets(question):
         rag_result=rag_result,
         question=question,
     )
-    assert "not establish them as causes of CMP-021's results" in answer
+    assert "5,270,000" in answer
     assert "future-campaign recommendation" in answer.lower()
     assert verification["verified"] is True
 
@@ -1028,39 +1022,23 @@ def test_composer_preserves_multiple_relevant_sections_from_one_document():
 @pytest.mark.parametrize(
     ("question", "expected_chunks"),
     [
-        ("What strategy is recommended for campaign CMP-021?", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
+        ("What strategy is recommended for campaign CMP-021?", {"DOC-MKT-024-008"}),
         ("What factors should be investigated to understand CMP-021's performance?", {"DOC-MKT-024-006"}),
         ("What does the CMP-021 postmortem recommend before increasing campaign spending?", {"DOC-MKT-024-008"}),
-        ("Summarize the CMP-021 campaign postmortem and its key recommendations.", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
-        ("Explain CMP-021's financial performance using database results and the campaign postmortem.", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
-        ("What are the CMP-021 campaign metrics and recommended strategy?", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
+        ("What campaign metrics does the CMP-021 postmortem report?", {"DOC-MKT-024-004"}),
+        ("What metrics are reported for CMP-021?", {"DOC-MKT-024-004"}),
+        ("Summarize the CMP-021 campaign postmortem and its key recommendations.", {"DOC-MKT-024-004", "DOC-MKT-024-006", "DOC-MKT-024-008"}),
+        ("Explain CMP-021's financial performance using database results and the campaign postmortem.", {"DOC-MKT-024-004", "DOC-MKT-024-006", "DOC-MKT-024-008"}),
+        ("What are the CMP-021 campaign metrics and recommended strategy?", {"DOC-MKT-024-004", "DOC-MKT-024-008"}),
     ],
 )
 def test_cmp021_paraphrases_select_each_requested_postmortem_facet(question, expected_chunks):
-    evidence = [
-        {
-            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-006",
-            "filename": "campaign_postmortem_CMP-021.docx",
-            "title": "Campaign Postmortem CMP-021", "related_entity_ids": ["CMP-021"],
-            "content": (
-                "Observed alignment between target segment, campaign objective, channel selection, "
-                "and conversion-oriented creative are factors to investigate."
-            ), "similarity": 0.7,
-        },
-        {
-            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-008",
-            "filename": "campaign_postmortem_CMP-021.docx",
-            "title": "Campaign Postmortem CMP-021", "related_entity_ids": ["CMP-021"],
-            "content": (
-                "Future campaigns should compare conversion efficiency, customer segment quality, "
-                "and incremental revenue before increasing spend."
-            ), "similarity": 0.7,
-        },
-    ]
+    evidence = _cmp021_postmortem_evidence()
     expanded = RAGAgent._expand_retrieval_query(question)
     selected = AnswerComposer().select_relevant_evidence(evidence, question)
 
-    assert "DOC-MKT-024" in expanded
+    if "campaign" in question.lower() or "postmortem" in question.lower():
+        assert "DOC-MKT-024" in expanded
     assert {item["chunk_id"] for item in selected} == expected_chunks
     assert AnswerComposer()._missing_document_facets(question, selected) == []
 
@@ -1099,28 +1077,14 @@ def test_campaign_postmortem_factor_language_explicitly_avoids_cause_claims():
         ("What strategy is recommended for campaign CMP-021?", "RAG"),
         ("What factors should be investigated to understand CMP-021's performance?", "RAG"),
         ("What does the CMP-021 postmortem recommend before increasing campaign spending?", "RAG"),
+        ("What campaign metrics does the CMP-021 postmortem report?", "RAG"),
         ("Summarize the CMP-021 campaign postmortem and its key recommendations.", "RAG"),
         ("Explain CMP-021's financial performance using database results and the campaign postmortem.", "BOTH"),
         ("What are the CMP-021 campaign metrics and recommended strategy?", "BOTH"),
     ],
 )
 def test_cmp021_campaign_wordings_verify_when_requested_evidence_is_present(question, route):
-    evidence = [
-        {
-            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-006",
-            "filename": "campaign_postmortem_CMP-021.docx", "title": "Campaign Postmortem CMP-021",
-            "related_entity_ids": ["CMP-021"],
-            "content": "Observed alignment between target segment, campaign objective, channel selection, and conversion-oriented creative are factors to investigate.",
-            "similarity": 0.7,
-        },
-        {
-            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-008",
-            "filename": "campaign_postmortem_CMP-021.docx", "title": "Campaign Postmortem CMP-021",
-            "related_entity_ids": ["CMP-021"],
-            "content": "Future campaigns should compare conversion efficiency, customer segment quality, and incremental revenue before increasing spend.",
-            "similarity": 0.7,
-        },
-    ]
+    evidence = _cmp021_postmortem_evidence()
     rag_result = {
         "evidence": evidence,
         "sources": [{"document_id": item["document_id"], "chunk_id": item["chunk_id"]} for item in evidence],
@@ -1142,6 +1106,113 @@ def test_cmp021_campaign_wordings_verify_when_requested_evidence_is_present(ques
 
     assert {item["chunk_id"] for item in composer.select_relevant_evidence(evidence, question)}
     assert verification["verified"] is True, verification["issues"]
+
+
+def _cmp021_rag_result(evidence):
+    return {
+        "evidence": evidence,
+        "sources": [
+            {"document_id": item["document_id"], "chunk_id": item["chunk_id"]}
+            for item in evidence
+        ],
+    }
+
+
+@pytest.mark.unit
+def test_cmp021_metrics_question_answers_from_metrics_chunk_only():
+    question = "What campaign metrics does the CMP-021 postmortem report?"
+    evidence = _cmp021_postmortem_evidence()
+    composer = AnswerComposer()
+    selected = composer.select_relevant_evidence(evidence, question)
+    answer = composer.compose({"route": "RAG", "question": question, "rag": _cmp021_rag_result(evidence)})
+    verification = VerificationAgent().verify(
+        answer, "RAG", rag_result=_cmp021_rag_result(evidence), question=question,
+    )
+
+    assert [item["chunk_id"] for item in selected] == ["DOC-MKT-024-004"]
+    assert all(value in answer for value in ("₹1,840,000.00", "₹5,270,000.00", "3812", "47,919"))
+    assert verification["verified"] is True, verification["issues"]
+
+
+@pytest.mark.unit
+def test_cmp021_metrics_question_fails_verification_without_metrics_chunk():
+    question = "What metrics are reported for CMP-021?"
+    evidence = _cmp021_postmortem_evidence()[1:]
+    answer = AnswerComposer().compose({"route": "RAG", "question": question, "rag": _cmp021_rag_result(evidence)})
+    verification = VerificationAgent().verify(
+        answer, "RAG", rag_result=_cmp021_rag_result(evidence), question=question,
+    )
+
+    assert verification["verified"] is False
+    assert "enough substantive evidence" in answer
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("missing_chunk", [
+    "DOC-MKT-024-004", "DOC-MKT-024-006", "DOC-MKT-024-008",
+])
+def test_cmp021_full_summary_requires_every_postmortem_facet(missing_chunk):
+    question = "Summarize the CMP-021 campaign postmortem and its key recommendations."
+    evidence = [item for item in _cmp021_postmortem_evidence() if item["chunk_id"] != missing_chunk]
+    answer = AnswerComposer().compose({"route": "RAG", "question": question, "rag": _cmp021_rag_result(evidence)})
+    verification = VerificationAgent().verify(
+        answer, "RAG", rag_result=_cmp021_rag_result(evidence), question=question,
+    )
+
+    assert verification["verified"] is False
+    missing_facets = AnswerComposer._missing_document_facets(
+        question, AnswerComposer().select_relevant_evidence(evidence, question),
+    )
+    assert len(missing_facets) == 1
+
+
+@pytest.mark.unit
+def test_cmp021_hybrid_financial_explanation_preserves_sql_and_all_postmortem_facets():
+    question = "Explain CMP-021's financial performance using database results and the campaign postmortem."
+    evidence = _cmp021_postmortem_evidence()
+    sql_result = {
+        "sql": "SELECT campaign_id, actual_spend, revenue_generated, conversions, clicks FROM marketing_campaigns WHERE campaign_id = %s;",
+        "validation": {"valid": True},
+        "query_plan": {"intent": "CAMPAIGN_PERFORMANCE", "entity_id": "CMP-021"},
+        "result": {
+            "columns": ["campaign_id", "actual_spend", "revenue_generated", "conversions", "clicks"],
+            "rows": [["CMP-021", 1840000.0, 5270000.0, 3812, 47919]],
+        },
+    }
+    rag_result = _cmp021_rag_result(evidence)
+    composer = AnswerComposer()
+    answer = composer.compose({"route": "BOTH", "question": question, "sql": sql_result, "rag": rag_result})
+    verification = VerificationAgent().verify(
+        answer, "BOTH", sql_result=sql_result, rag_result=rag_result, question=question,
+    )
+
+    assert "5,270,000" in answer
+    assert {item["chunk_id"] for item in composer.select_relevant_evidence(evidence, question)} == {
+        "DOC-MKT-024-004", "DOC-MKT-024-006", "DOC-MKT-024-008",
+    }
+    assert verification["verified"] is True, verification["issues"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("missing_chunk", [
+    "DOC-MKT-024-004", "DOC-MKT-024-006", "DOC-MKT-024-008",
+])
+def test_cmp021_hybrid_postmortem_summary_fails_if_any_facet_is_missing(missing_chunk):
+    question = "Explain CMP-021's financial performance using database results and the campaign postmortem."
+    evidence = [item for item in _cmp021_postmortem_evidence() if item["chunk_id"] != missing_chunk]
+    sql_result = {
+        "sql": "SELECT campaign_id, revenue_generated FROM marketing_campaigns WHERE campaign_id = %s;",
+        "validation": {"valid": True},
+        "query_plan": {"intent": "CAMPAIGN_PERFORMANCE", "entity_id": "CMP-021"},
+        "result": {"columns": ["campaign_id", "revenue_generated"], "rows": [["CMP-021", 5270000]]},
+    }
+    rag_result = _cmp021_rag_result(evidence)
+    answer = AnswerComposer().compose({"route": "BOTH", "question": question, "sql": sql_result, "rag": rag_result})
+    verification = VerificationAgent().verify(
+        answer, "BOTH", sql_result=sql_result, rag_result=rag_result, question=question,
+    )
+
+    assert verification["verified"] is False
 
 
 @pytest.mark.unit

@@ -503,6 +503,18 @@ class SQLReasoner:
                 "actual_spend",
                 "revenue_generated",
             ]
+        elif (
+            not campaign_ids
+            and re.search(r"\b(show|list|display)\b", question_lower)
+            and re.search(r"\ball\b.{0,35}\bcampaigns?\b", question_lower)
+            and re.search(r"\b(performance|results|metrics)\b", question_lower)
+            and not re.search(r"\b(summary|summari[sz]e|overview|totals?)\b", question_lower)
+        ):
+            intent = "CAMPAIGN_PERFORMANCE_LIST"
+            columns = [
+                "campaign_id", "campaign_name", "actual_spend",
+                "revenue_generated", "conversions", "clicks",
+            ]
         elif not campaign_ids and self._is_campaign_summary_question(
             question_lower
         ):

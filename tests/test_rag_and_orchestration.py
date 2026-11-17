@@ -573,6 +573,43 @@ def test_auto_routing(question, expected):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Show the performance of all marketing campaigns.", "SQL"),
+        ("What strategy is recommended for campaign CMP-021?", "RAG"),
+        ("What factors should be investigated to understand CMP-021's performance?", "RAG"),
+        ("What does the CMP-021 postmortem recommend before increasing campaign spending?", "RAG"),
+        ("Summarize the CMP-021 campaign postmortem and its key recommendations.", "RAG"),
+        ("What is NovaMart's overall return rate, and what does the return-policy document say about returns?", "BOTH"),
+        ("Explain CMP-021's financial performance using database results and the campaign postmortem.", "BOTH"),
+        ("What are the CMP-021 campaign metrics and recommended strategy?", "BOTH"),
+        ("How many products are in the NovaMart catalog?", "SQL"),
+        ("How many customers are there?", "SQL"),
+        ("What is total sales revenue?", "SQL"),
+        ("What does the NovaMart return policy say about product returns?", "RAG"),
+        ("What is the employee attrition rate?", "RAG"),
+        ("What was the revenue of campaign CMP-999?", "SQL"),
+    ],
+)
+def test_manual_acceptance_routing_cases(question, expected):
+    assert Orchestrator._route_question(question) == expected
+
+
+@pytest.mark.unit
+def test_unsupported_employee_attrition_question_abstains_without_evidence():
+    question = "What is the employee attrition rate?"
+    composer = AnswerComposer()
+    answer = composer.compose({"route": "RAG", "question": question, "rag": {"evidence": []}})
+    verification = VerificationAgent().verify(
+        answer, "RAG", rag_result={"evidence": [], "sources": []}, question=question,
+    )
+
+    assert "could not find enough relevant information" in answer.lower()
+    assert verification["verified"] is False
+
+
+@pytest.mark.unit
 @pytest.mark.unit
 def test_manual_mode_is_not_supported():
     import inspect
@@ -985,3 +1022,151 @@ def test_composer_preserves_multiple_relevant_sections_from_one_document():
     assert "revenue" in combined_content
     assert "observed drivers" in combined_content
     assert "recommendations" in combined_content
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("question", "expected_chunks"),
+    [
+        ("What strategy is recommended for campaign CMP-021?", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
+        ("What factors should be investigated to understand CMP-021's performance?", {"DOC-MKT-024-006"}),
+        ("What does the CMP-021 postmortem recommend before increasing campaign spending?", {"DOC-MKT-024-008"}),
+        ("Summarize the CMP-021 campaign postmortem and its key recommendations.", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
+        ("Explain CMP-021's financial performance using database results and the campaign postmortem.", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
+        ("What are the CMP-021 campaign metrics and recommended strategy?", {"DOC-MKT-024-006", "DOC-MKT-024-008"}),
+    ],
+)
+def test_cmp021_paraphrases_select_each_requested_postmortem_facet(question, expected_chunks):
+    evidence = [
+        {
+            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-006",
+            "filename": "campaign_postmortem_CMP-021.docx",
+            "title": "Campaign Postmortem CMP-021", "related_entity_ids": ["CMP-021"],
+            "content": (
+                "Observed alignment between target segment, campaign objective, channel selection, "
+                "and conversion-oriented creative are factors to investigate."
+            ), "similarity": 0.7,
+        },
+        {
+            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-008",
+            "filename": "campaign_postmortem_CMP-021.docx",
+            "title": "Campaign Postmortem CMP-021", "related_entity_ids": ["CMP-021"],
+            "content": (
+                "Future campaigns should compare conversion efficiency, customer segment quality, "
+                "and incremental revenue before increasing spend."
+            ), "similarity": 0.7,
+        },
+    ]
+    expanded = RAGAgent._expand_retrieval_query(question)
+    selected = AnswerComposer().select_relevant_evidence(evidence, question)
+
+    assert "DOC-MKT-024" in expanded
+    assert {item["chunk_id"] for item in selected} == expected_chunks
+    assert AnswerComposer()._missing_document_facets(question, selected) == []
+
+
+@pytest.mark.unit
+def test_campaign_postmortem_factor_language_explicitly_avoids_cause_claims():
+    evidence = [{
+        "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-006",
+        "filename": "campaign_postmortem_CMP-021.docx",
+        "title": "Campaign Postmortem CMP-021", "related_entity_ids": ["CMP-021"],
+        "content": (
+            "Observed alignment between target segment, campaign objective, channel selection, "
+            "and conversion-oriented creative are factors to investigate."
+        ), "similarity": 0.7,
+    }]
+    question = "What factors should be investigated to understand CMP-021's performance?"
+    answer = AnswerComposer().compose({"route": "RAG", "question": question, "rag": {"evidence": evidence}})
+    verification = VerificationAgent().verify(
+        answer,
+        "RAG",
+        rag_result={
+            "evidence": evidence,
+            "sources": [{"document_id": item["document_id"], "chunk_id": item["chunk_id"]} for item in evidence],
+        },
+        question=question,
+    )
+
+    assert "does not establish them as causes" in answer
+    assert verification["verified"] is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("question", "route"),
+    [
+        ("What strategy is recommended for campaign CMP-021?", "RAG"),
+        ("What factors should be investigated to understand CMP-021's performance?", "RAG"),
+        ("What does the CMP-021 postmortem recommend before increasing campaign spending?", "RAG"),
+        ("Summarize the CMP-021 campaign postmortem and its key recommendations.", "RAG"),
+        ("Explain CMP-021's financial performance using database results and the campaign postmortem.", "BOTH"),
+        ("What are the CMP-021 campaign metrics and recommended strategy?", "BOTH"),
+    ],
+)
+def test_cmp021_campaign_wordings_verify_when_requested_evidence_is_present(question, route):
+    evidence = [
+        {
+            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-006",
+            "filename": "campaign_postmortem_CMP-021.docx", "title": "Campaign Postmortem CMP-021",
+            "related_entity_ids": ["CMP-021"],
+            "content": "Observed alignment between target segment, campaign objective, channel selection, and conversion-oriented creative are factors to investigate.",
+            "similarity": 0.7,
+        },
+        {
+            "document_id": "DOC-MKT-024", "chunk_id": "DOC-MKT-024-008",
+            "filename": "campaign_postmortem_CMP-021.docx", "title": "Campaign Postmortem CMP-021",
+            "related_entity_ids": ["CMP-021"],
+            "content": "Future campaigns should compare conversion efficiency, customer segment quality, and incremental revenue before increasing spend.",
+            "similarity": 0.7,
+        },
+    ]
+    rag_result = {
+        "evidence": evidence,
+        "sources": [{"document_id": item["document_id"], "chunk_id": item["chunk_id"]} for item in evidence],
+    }
+    sql_result = {
+        "sql": "SELECT campaign_id, revenue_generated FROM marketing_campaigns WHERE campaign_id = %s;",
+        "validation": {"valid": True},
+        "query_plan": {"intent": "CAMPAIGN_PERFORMANCE", "entity_id": "CMP-021"},
+        "result": {"columns": ["campaign_id", "revenue_generated"], "rows": [["CMP-021", 5270000]]},
+    }
+    composer = AnswerComposer()
+    answer = composer.compose({
+        "route": route, "question": question, "sql": sql_result, "rag": rag_result,
+    })
+    verification = VerificationAgent().verify(
+        answer, route, sql_result=sql_result if route == "BOTH" else None,
+        rag_result=rag_result, question=question,
+    )
+
+    assert {item["chunk_id"] for item in composer.select_relevant_evidence(evidence, question)}
+    assert verification["verified"] is True, verification["issues"]
+
+
+@pytest.mark.unit
+def test_return_rate_policy_hybrid_verifies_only_when_both_sources_are_present():
+    question = "What is NovaMart's overall return rate, and what does the return-policy document say about returns?"
+    sql_result = {
+        "sql": "SELECT return_count, order_count, return_rate_percent FROM returns;",
+        "validation": {"valid": True},
+        "query_plan": {"intent": "RETURN_RATE"},
+        "result": {"columns": ["return_count", "order_count", "return_rate_percent"], "rows": [[3585, 50000, 7.17]]},
+    }
+    evidence = [{
+        "document_id": "DOC-POL-001", "chunk_id": "DOC-POL-001-002",
+        "filename": "returns_policy.pdf", "title": "Return Refund Policy",
+        "content": "Return Refund Policy: customers may return eligible products within thirty days for a refund.",
+        "related_entity_ids": [], "similarity": 0.8,
+    }]
+    rag_result = {"evidence": evidence, "sources": [{"document_id": "DOC-POL-001", "chunk_id": "DOC-POL-001-002"}]}
+    answer = AnswerComposer().compose({
+        "route": "BOTH", "question": question, "sql": sql_result, "rag": rag_result,
+    })
+    verification = VerificationAgent().verify(
+        answer, "BOTH", sql_result=sql_result, rag_result=rag_result, question=question,
+    )
+
+    assert "7.17%" in answer
+    assert "thirty days" in answer
+    assert verification["verified"] is True, verification["issues"]

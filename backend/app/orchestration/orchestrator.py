@@ -1,6 +1,7 @@
 
 import re
 import logging
+from datetime import date, datetime
 from typing import Any
 
 from backend.app.sql.sql_agent import SQLAgent
@@ -66,6 +67,50 @@ class Orchestrator:
         resolved_question = self._resolve_clarification(question, clarification_context)
         if resolved_question:
             question = resolved_question
+
+        future_sales = self._future_sales_period(question)
+        if future_sales:
+            state, period_label = future_sales
+            if state == "unspecified":
+                prompt = (
+                    "Which future month do you mean? Actual sales for a future period are not available, "
+                    "and I do not generate forecasts."
+                )
+                verification = self.verification_agent.verify(
+                    answer=prompt, route="CLARIFY", question=question,
+                )
+                verification["verified"] = False
+                verification.setdefault("issues", []).append(
+                    "No historical or forecast evidence was used to answer a future-sales request."
+                )
+                return {
+                    "question": question,
+                    "route": "CLARIFY",
+                    "answer": prompt,
+                    "sources": [],
+                    "verification": verification,
+                    "clarification": {
+                        "original_question": question,
+                        "kind": "future_sales_month",
+                        "options": [],
+                        "prompt": prompt,
+                    },
+                }
+
+            answer = (
+                f"Actual sales figures for {period_label} are unavailable because that period is in the future. "
+                "No forecast was generated."
+            )
+            verification = self.verification_agent.verify(
+                answer=answer, route="SQL", question=question,
+            )
+            return {
+                "question": question,
+                "route": "SQL",
+                "answer": answer,
+                "sources": [],
+                "verification": verification,
+            }
 
         clarification = self._clarification_needed(question)
         if clarification:
@@ -422,6 +467,28 @@ class Orchestrator:
             if not match or match.group(1).upper() == match.group(2).upper():
                 return None
             return f"Compare campaigns {match.group(1).upper()} and {match.group(2).upper()}."
+        if kind == "future_sales_month":
+            match = re.fullmatch(
+                r"\s*([A-Za-z]+)\s+(20\d{2})\s*[.!]?\s*", reply
+            )
+            if not match:
+                return None
+            try:
+                month_date = datetime.strptime(
+                    f"{match.group(1)} {match.group(2)}", "%B %Y"
+                ).date().replace(day=1)
+            except ValueError:
+                return None
+            today = date.today().replace(day=1)
+            if month_date <= today:
+                return None
+            return re.sub(
+                r"\ba future month\b",
+                f"{match.group(1)} {match.group(2)}",
+                original,
+                count=1,
+                flags=re.IGNORECASE,
+            )
         normalized = re.sub(r"[^a-z0-9 ]", " ", reply.lower()).strip()
         normalized = re.sub(r"\s+", " ", normalized)
         if len(normalized.split()) > 6:
@@ -580,6 +647,29 @@ class Orchestrator:
                 "That specific filter is not supported by the current SQL "
                 "templates. Would you like an unfiltered summary instead?"
             )
+        return None
+
+    @staticmethod
+    def _future_sales_period(question: str) -> tuple[str, str | None] | None:
+        """Recognize future actual-sales requests before they reach SQL templates."""
+        text = re.sub(r"\s+", " ", question.lower()).strip()
+        if not re.search(r"\b(sales?|revenue|orders?)\b", text):
+            return None
+        if re.search(r"\b(future|upcoming|next)\s+(?:calendar\s+)?months?\b", text):
+            return ("unspecified", None)
+        month_match = re.search(
+            r"\b(january|february|march|april|may|june|july|august|september|"
+            r"october|november|december)\s+(20\d{2})\b",
+            text,
+        )
+        if month_match:
+            month_date = datetime.strptime(
+                f"{month_match.group(1)} {month_match.group(2)}", "%B %Y"
+            ).date().replace(day=1)
+            if month_date > date.today().replace(day=1):
+                return ("future", f"{month_match.group(1).title()} {month_match.group(2)}")
+        if re.search(r"\b(next month|upcoming month)\b", text):
+            return ("unspecified", None)
         return None
 
     @staticmethod
@@ -787,6 +877,14 @@ class Orchestrator:
         }
         if campaign_comparison and len(comparison_ids) >= 2:
             return "SQL"
+        if (
+            campaign_related
+            and re.search(r"\b(show|list|display)\b", text)
+            and re.search(r"\ball\b.{0,35}\bcampaigns?\b", text)
+            and re.search(r"\b(performance|results|metrics)\b", text)
+            and not re.search(r"\b(summary|summari[sz]e|overview|totals?)\b", text)
+        ):
+            return "SQL"
 
         explanation_signal = Orchestrator._contains_term(
             text,
@@ -806,6 +904,30 @@ class Orchestrator:
                 "action plan",
             },
         )
+
+        campaign_document_framing = campaign_related and (
+            Orchestrator._contains_term(
+                text,
+                {
+                    "postmortem", "document", "documents", "factors to investigate",
+                    "investigated", "investigate", "strategy", "recommended",
+                    "recommendation", "recommendations", "lessons learned",
+                },
+            )
+        )
+        explicit_campaign_hybrid = campaign_document_framing and (
+            Orchestrator._contains_term(text, {"database results", "SQL results", "structured data"})
+            or (
+                Orchestrator._contains_term(text, {"metrics", "metric", "results", "financial performance"})
+                and explanation_signal
+            )
+        )
+
+        # Postmortem recommendations and factors are document questions even
+        # when they mention performance or spending. Only an explicit request
+        # for structured metrics alongside the document evidence is hybrid.
+        if campaign_document_framing and not explicit_campaign_hybrid:
+            return "RAG"
 
         metric_signal = Orchestrator._contains_term(
             text,
@@ -858,7 +980,10 @@ class Orchestrator:
             policy_question
             and has_sql_signal
             and bool(re.search(r"\b(return|returns|refund|refunds)\b", text))
-            and metric_signal
+            and (
+                metric_signal
+                or bool(re.search(r"\b(return|overall return) rate\b", text))
+            )
         )
         if return_policy_hybrid:
             return "BOTH"

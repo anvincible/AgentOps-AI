@@ -108,3 +108,35 @@ def test_source_attribution_retains_sql_intent_and_rag_document_refs():
     ]
     assert any("financial business impact cannot be quantified" in item
                for item in analysis["insights"])
+
+
+def test_support_ticket_grouped_results_produce_status_analysis_and_chart():
+    result = _result(
+        ["status", "ticket_count", "average_resolution_hours", "average_satisfaction"],
+        [("Open", 12, 18.5, 3.2), ("Closed", 28, 6.25, 4.6)],
+        "SUPPORT_TICKET_ANALYTICS",
+    )
+    result["query_plan"]["dimension"] = "status"
+    analysis = AnalysisAgent().analyze(result, "Show the number of support tickets by status.")
+
+    assert analysis["status"] == "complete"
+    assert any("Open: 12 tickets" in item and "18.5" in item and "3.2" in item for item in analysis["insights"])
+    assert any("Closed: 28 tickets" in item and "6.25" in item and "4.6" in item for item in analysis["insights"])
+    assert analysis["chart"]["metric"] == "ticket_count"
+    assert analysis["chart"]["labels"] == ["Open", "Closed"]
+
+
+def test_payment_method_grouped_results_report_counts_amounts_averages_and_shares():
+    result = _result(
+        ["payment_method", "payment_count", "total_payment_amount", "average_payment_amount"],
+        [("UPI", 75, 15000, 200), ("Card", 25, 10000, 400)],
+        "PAYMENT_ANALYTICS",
+    )
+    result["query_plan"]["dimension"] = "payment_method"
+    analysis = AnalysisAgent().analyze(result, "Show payment methods and their transaction counts.")
+
+    assert analysis["status"] == "complete"
+    assert any("UPI: 75 transactions" in item and "75.00%" in item for item in analysis["insights"])
+    assert any("Card: 25 transactions" in item and "25.00%" in item for item in analysis["insights"])
+    assert analysis["chart"]["metric"] == "payment_count"
+    assert analysis["chart"]["labels"] == ["UPI", "Card"]

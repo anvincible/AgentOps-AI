@@ -90,6 +90,8 @@ def test_business_summary_routes_to_sql_and_reports_only_retrieved_areas():
     assert len(result["analysis"]["evidence"]["results"]) == 4
     assert any("Customers: Customer Count: 10,000" in item for item in result["analysis"]["insights"])
     assert any("Returns:" in item and "7.17%" in item for item in result["analysis"]["insights"])
+    assert any("Sales:" in item and "4,745,475,661.63" in item for item in result["analysis"]["insights"])
+    assert any("Campaigns:" in item and "50" in item for item in result["analysis"]["insights"])
 
 
 def test_business_summary_partial_failures_are_explicit_and_unqueried_data_omitted():
@@ -463,3 +465,37 @@ def test_rag_and_hybrid_answer_verification_paths_remain_available():
         rag_result=rag_result, question=hybrid_question,
     )
     assert hybrid_verification["verified"] is True
+
+
+def test_grouped_support_and_payment_queries_integrate_analysis_without_false_insufficient_warning():
+    cases = [
+        (
+            "Show the number of support tickets by status.",
+            _sql_result(
+                "SUPPORT_TICKET_ANALYTICS",
+                ["status", "ticket_count", "average_resolution_hours", "average_satisfaction"],
+                [["Open", 12, 18.5, 3.2], ["Closed", 28, 6.25, 4.6]],
+            ),
+            "status", "ticket_count", "Open", "Closed",
+        ),
+        (
+            "Show payment methods and their transaction counts.",
+            _sql_result(
+                "PAYMENT_ANALYTICS",
+                ["payment_method", "payment_count", "total_payment_amount", "average_payment_amount"],
+                [["UPI", 75, 15000, 200], ["Card", 25, 10000, 400]],
+            ),
+            "payment_method", "payment_count", "UPI", "Card",
+        ),
+    ]
+
+    for question, sql_result, dimension, metric, first, second in cases:
+        sql_result["query_plan"]["dimension"] = dimension
+        result = _orchestrator({question: sql_result}).answer(question)
+
+        assert result["route"] == "SQL"
+        assert result["analysis"]["status"] == "complete"
+        assert result["analysis"]["chart"]["metric"] == metric
+        assert result["analysis"]["chart"]["labels"] == [first, second]
+        assert "Insufficient evidence" not in result["answer"]
+        assert result["verification"]["verified"] is True

@@ -504,6 +504,30 @@ describe('App', () => {
     expect(app.pendingClarification).toBeNull();
   });
 
+  it('labels database and document evidence with their correct source types', () => {
+    const { fixture, app } = createApp();
+    app.question = 'Return rate and return policy';
+    app.sendQuestion();
+    http.expectOne('/api/ask').flush({
+      route: 'BOTH',
+      answer: 'Database return rate with supporting return-policy excerpt.',
+      sources: [
+        { type: 'sql', title: 'NovaMart PostgreSQL database' },
+        { type: 'document', document_id: 'DOC-POL-001', title: 'Return Refund Policy' },
+      ],
+      verification: { verified: true, route: 'BOTH' },
+    });
+    fixture.detectChanges();
+
+    const labels = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.source-card small:first-of-type'),
+    ).map((element) => element.textContent?.trim());
+    expect(labels).toEqual(['Database source', 'Document source']);
+    expect(Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.source-card'),
+    ).some((card) => card.textContent?.includes('DOC-POL-001'))).toBe(true);
+  });
+
   it('shows verified product count analysis without an insufficient-evidence warning', () => {
     const { fixture, app } = createApp();
     app.question = 'How many products are in the NovaMart catalog?';

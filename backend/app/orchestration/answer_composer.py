@@ -1,4 +1,5 @@
 import re
+from datetime import date, datetime
 from typing import Any
 
 
@@ -149,7 +150,7 @@ class AnswerComposer:
                 None,
             )
             if month_index is not None:
-                rows = sorted(rows, key=lambda row: str(row[month_index]))
+                rows = sorted(rows, key=lambda row: self._month_order(row[month_index]))
 
         if not rows:
             return "I could not find any matching data."
@@ -165,6 +166,19 @@ class AnswerComposer:
                 lines.append(f"- **{label}:** {formatted}")
 
         return self._with_interpretation("\n".join(lines), plan)
+
+    @staticmethod
+    def _month_order(value: Any) -> tuple[int, int, int, str]:
+        if isinstance(value, (date, datetime)):
+            return (0, value.year, value.month, str(value))
+        text = str(value).strip()
+        for format_string in ("%Y-%m-%d", "%Y-%m", "%B %Y", "%b %Y"):
+            try:
+                parsed = datetime.strptime(text, format_string)
+            except ValueError:
+                continue
+            return (0, parsed.year, parsed.month, text)
+        return (1, 0, 0, text.casefold())
 
     @staticmethod
     def _with_interpretation(
@@ -378,9 +392,9 @@ class AnswerComposer:
         question: str,
         selected: list[dict[str, Any]],
     ) -> str | None:
-        required = {"campaign_observed_drivers", "campaign_recommendation"}
         requested = cls._requested_document_facets(question)
-        if not required.issubset(requested):
+        requested_observed = "campaign_observed_drivers" in requested
+        if not requested_observed:
             return None
         if cls._missing_document_facets(question, selected):
             return None
@@ -423,11 +437,38 @@ class AnswerComposer:
             r"\b(delay|delayed|late|exception|happens)\b", text
         ):
             requested["delivery_exception"] = "delivery exception guidance"
-        if re.search(r"\bCMP-021\b", question, re.IGNORECASE) and re.search(
-            r"\b(strategy|strategies|recommend(?:ed|ation|ations)?)\b", text
-        ):
-            requested["campaign_recommendation"] = "campaign strategy/recommendation"
-            requested["campaign_observed_drivers"] = "campaign factors to investigate"
+        if re.search(r"\bCMP-021\b", question, re.IGNORECASE):
+            asks_factors = bool(re.search(
+                r"\b(factors?|investigat(?:e|ed|ing)|understand)\b", text
+            ))
+            asks_recommendation = bool(re.search(
+                r"\b(strategy|strategies|recommend(?:ed|ation|ations)?|"
+                r"before increasing spend|key recommendations?)\b",
+                text,
+            ))
+            postmortem_summary = (
+                "postmortem" in text
+                and bool(re.search(r"\b(summarize|summarise|summary|explain|financial)\b", text))
+            )
+            focused_postmortem_recommendation = (
+                "postmortem" in text
+                and asks_recommendation
+                and not postmortem_summary
+                and not re.search(r"\b(metrics?|results?|performance|strategy|factors?)\b", text)
+            )
+            explicit_hybrid_postmortem = (
+                "postmortem" in text
+                and bool(re.search(r"\b(database|SQL|structured data)\b", text, re.IGNORECASE))
+            )
+            if (
+                asks_factors
+                or (asks_recommendation and not focused_postmortem_recommendation)
+                or postmortem_summary
+                or explicit_hybrid_postmortem
+            ):
+                requested["campaign_observed_drivers"] = "campaign factors to investigate"
+            if asks_recommendation or postmortem_summary or explicit_hybrid_postmortem:
+                requested["campaign_recommendation"] = "campaign strategy/recommendation"
         return requested
 
     @classmethod
@@ -759,6 +800,11 @@ class AnswerComposer:
         selected: list[dict[str, Any]] = []
         chunks_per_document: dict[str, int] = {}
         for item in candidates:
+            if requested_facets and not any(
+                cls._item_covers_document_facet(item, facet)
+                for facet in requested_facets
+            ):
+                continue
             document_id = str(item.get("document_id") or "")
             if document_id not in selected_document_ids:
                 continue
@@ -853,6 +899,18 @@ class AnswerComposer:
                     "alignment", "target", "segment", "objective", "channel",
                     "selection", "conversion-oriented", "creative",
                 })
+        if set(requested_facets).intersection({"campaign_recommendation", "campaign_observed_drivers"}):
+            # For the fixed CMP-021 postmortem facets, these words describe
+            # the request or its evidence source; the required chunk-level
+            # facet checks below remain mandatory.
+            facet_terms.update({
+                "key", "summarize", "summarise", "understand", "postmortem",
+                "investigated", "investigating",
+                "spending", "increasing", "database", "results", "result",
+                "financial", "structured", "sql", "evidence", "using",
+            })
+        if "return_policy" in requested_facets:
+            facet_terms.update({"overall", "rate", "document"})
         key_terms = {
             word for word in words
             if len(word) >= 5

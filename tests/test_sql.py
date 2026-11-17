@@ -240,6 +240,27 @@ def test_campaign_performance_overview_generates_verified_aggregate_without_rank
 
 
 @pytest.mark.unit
+def test_all_marketing_campaign_performance_request_lists_labeled_rows(schema_loader):
+    question = "Show the performance of all marketing campaigns."
+    reasoner = SQLReasoner(schema_loader)
+    generator = SQLGenerator(schema_loader)
+    plan = reasoner.reason(question)
+    sql, params = generator.generate_query(plan)
+    validation = SQLValidator(schema_loader.load_schema()).validate(sql)
+
+    assert plan["intent"] == "CAMPAIGN_PERFORMANCE_LIST"
+    assert plan["columns"] == [
+        "campaign_id", "campaign_name", "actual_spend",
+        "revenue_generated", "conversions", "clicks",
+    ]
+    assert "ORDER BY campaign_id" in sql
+    assert "LIMIT 100" in sql
+    assert "COUNT(*)" not in sql
+    assert params == ()
+    assert validation["valid"] is True, validation["errors"]
+
+
+@pytest.mark.unit
 def test_campaign_roi_ranking_remains_verified_and_descending(schema_loader):
     question = "Rank campaigns by ROI."
     reasoner = SQLReasoner(schema_loader)

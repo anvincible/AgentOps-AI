@@ -129,6 +129,20 @@ WHERE {where_clause};
     ) -> str | None:
         intent = query_plan.get("intent")
 
+        if intent == "CAMPAIGN_PERFORMANCE_LIST":
+            for column in (
+                "campaign_id", "campaign_name", "actual_spend",
+                "revenue_generated", "conversions", "clicks",
+            ):
+                self._validate_column("marketing_campaigns", column)
+            return """
+SELECT campaign_id, campaign_name, actual_spend,
+       revenue_generated, conversions, clicks
+FROM marketing_campaigns
+ORDER BY campaign_id
+LIMIT 100;
+""".strip()
+
         if intent == "CAMPAIGN_PERFORMANCE" and query_plan.get("filters"):
             # Keep campaign-ID performance queries on the existing filtered
             # path below. An unfiltered overview is an aggregate, not a rank.

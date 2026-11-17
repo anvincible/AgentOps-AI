@@ -327,8 +327,15 @@
                               <div class="source-copy">
                                 <strong>{{ source.title || 'Supporting document' }}</strong>
                                 <small>
-                                  {{ source.filename || source.document_id || 'Document source' }}
+                                  @if (source.type === 'sql') {
+                                    Database source
+                                  } @else {
+                                    Document source
+                                  }
                                 </small>
+                                @if (source.filename || source.document_id) {
+                                  <small>{{ source.filename || source.document_id }}</small>
+                                }
                                 <small>
                                   @if (source.page_number != null) {
                                     Page {{ source.page_number }}

@@ -108,15 +108,20 @@ class RAGAgent:
             )
         if re.search(r"\bcustomer service policy\b", text):
             additions.append("customer support service policy refund dispute")
-        if re.search(r"\b(strategy|strategies|recommend(?:ed|ation|ations)?)\b", text) and re.search(
-            r"\bcmp-021\b", text
-        ):
+        cmp021_postmortem = bool(re.search(r"\bcmp-021\b", text, re.IGNORECASE)) and bool(
+            re.search(
+                r"\b(postmortem|strategy|strategies|recommend(?:ed|ation|ations)?|"
+                r"factor(?:s)?|investigat(?:e|ed|ing)|key recommendations?)\b",
+                text,
+            )
+        )
+        if cmp021_postmortem:
             additions.append(
-                "CMP-021 postmortem follow-up. Future campaigns should compare "
-                "conversion efficiency, customer segment quality, and incremental "
-                "revenue before increasing spend. Observed alignment among target "
-                "segment, campaign objective, channel selection, and "
-                "conversion-oriented creative are factors to investigate."
+                "DOC-MKT-024 CMP-021 campaign postmortem. Observed alignment among "
+                "target segment, campaign objective, channel selection, and "
+                "conversion-oriented creative are factors to investigate, not proven "
+                "causes. Future campaigns should compare conversion efficiency, "
+                "customer segment quality, and incremental revenue before increasing spend."
             )
 
         return " ".join([question.strip(), *additions])

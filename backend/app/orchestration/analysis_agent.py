@@ -20,6 +20,8 @@ class AnalysisAgent:
         "sales_month", "month", "period", "product_name", "category",
         "brand", "campaign_name", "campaign_id", "seller_name", "region",
         "customer_segment", "loyalty_tier", "acquisition_channel", "method",
+        "status", "issue_category", "priority", "assigned_team",
+        "payment_method", "payment_status",
     )
     METRIC_FIELDS = (
         "total_revenue", "revenue_generated", "total_spend", "actual_spend",
@@ -27,6 +29,7 @@ class AnalysisAgent:
         "return_rate_percent", "roi_percent", "units_sold", "count",
         "product_count",
         "return_count", "campaign_count", "conversions", "clicks", "ticket_count",
+        "payment_count", "average_resolution_hours", "average_satisfaction",
     )
 
     def analyze(
@@ -85,9 +88,60 @@ class AnalysisAgent:
             "campaign" in question_lower and self._asks_comparison(question_lower)
         )
 
-        if self._is_monthly(records):
-            records.sort(key=lambda row: self._label(row.get("sales_month", row.get("month"))))
-        if campaign_comparison and len(records) > 2:
+        grouped_analytics = intent in {"SUPPORT_TICKET_ANALYTICS", "PAYMENT_ANALYTICS"}
+        if grouped_analytics:
+            dimension = plan.get("dimension")
+            count_field = "ticket_count" if intent == "SUPPORT_TICKET_ANALYTICS" else "payment_count"
+            if not dimension or any(dimension not in row for row in records):
+                return self._insufficient(
+                    "Grouped SQL evidence is missing its requested category label.",
+                    evidence=evidence,
+                )
+            if any(self._number(row.get(count_field)) is None for row in records):
+                return self._insufficient(
+                    f"Grouped SQL evidence is missing numeric {count_field} values.",
+                    evidence=evidence,
+                )
+
+            chart = self._chart(records, count_field, "bar", dimension)
+            if intent == "SUPPORT_TICKET_ANALYTICS":
+                for row in records:
+                    label = str(row.get(dimension) if row.get(dimension) is not None else "Unspecified")
+                    details = [f"{self._display(self._number(row[count_field]), count_field)} tickets"]
+                    for field in ("average_resolution_hours", "average_satisfaction"):
+                        value = self._number(row.get(field))
+                        if value is not None:
+                            details.append(f"{field.replace('_', ' ')}: {self._display(value, field)}")
+                    insights.append(f"{label}: " + "; ".join(details) + ".")
+                highest = max(records, key=lambda row: self._number(row[count_field]) or 0)
+                insights.append(
+                    f"Highest ticket count: {highest.get(dimension) if highest.get(dimension) is not None else 'Unspecified'} "
+                    f"({self._display(self._number(highest[count_field]), count_field)} tickets)."
+                )
+            else:
+                total_count = sum(self._number(row[count_field]) or 0 for row in records)
+                for row in records:
+                    label = str(row.get(dimension) if row.get(dimension) is not None else "Unspecified")
+                    count = self._number(row[count_field]) or 0
+                    share = count / total_count * 100 if total_count > 0 else None
+                    details = [f"{self._display(count, count_field)} transactions"]
+                    for field in ("total_payment_amount", "average_payment_amount"):
+                        value = self._number(row.get(field))
+                        if value is not None:
+                            details.append(f"{field.replace('_', ' ')}: {self._display(value, field)}")
+                    if share is not None:
+                        details.append(f"share of returned transactions: {share:,.2f}%")
+                    insights.append(f"{label}: " + "; ".join(details) + ".")
+                if total_count <= 0:
+                    note = "Transaction shares could not be calculated because the returned count total is zero."
+                    limitations.append(note)
+                    status = "partial"
+
+        elif self._is_monthly(records):
+            records.sort(key=lambda row: self._month_order(row.get("sales_month", row.get("month"))))
+        if grouped_analytics:
+            pass
+        elif campaign_comparison and len(records) > 2:
             return self._insufficient(
                 "Campaign comparison supports exactly two separately identified campaigns; "
                 "the supplied SQL result contains more than two.",
@@ -474,6 +528,19 @@ class AnalysisAgent:
         if isinstance(value, (date, datetime)):
             return value.isoformat()
         return str(value)
+
+    @staticmethod
+    def _month_order(value: Any) -> tuple[int, int, int, str]:
+        if isinstance(value, (date, datetime)):
+            return (0, value.year, value.month, str(value))
+        text = str(value).strip()
+        for format_string in ("%Y-%m-%d", "%Y-%m", "%B %Y", "%b %Y"):
+            try:
+                parsed = datetime.strptime(text, format_string)
+            except ValueError:
+                continue
+            return (0, parsed.year, parsed.month, text)
+        return (1, 0, 0, text.casefold())
 
     @classmethod
     def _display(cls, value: float, field: str) -> str:

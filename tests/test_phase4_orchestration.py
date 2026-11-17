@@ -84,8 +84,10 @@ class _Sql:
 
     def __init__(self, result=None, error=None):
         self.result, self.error = result, error
+        self.calls = []
 
     def answer(self, _question):
+        self.calls.append(_question)
         if self.error:
             raise self.error
         return self.result
@@ -380,4 +382,79 @@ def test_hybrid_no_relevant_rag_evidence_has_no_document_claim_or_used_source():
     assert "return eligible items" not in result["answer"]
     assert "campaign strategy/recommendation" in result["answer"].lower()
     assert result["analysis"]["evidence"]["document_sources"] == []
+    assert result["verification"]["verified"] is False
+
+
+def test_future_sales_month_without_period_clarifies_without_running_sql():
+    obj = _orchestrator("SQL")
+    result = obj.answer("Give me exact sales figures for a future month.")
+
+    assert result["route"] == "CLARIFY"
+    assert "Which future month" in result["answer"]
+    assert "forecasts" in result["answer"]
+    assert result["clarification"]["kind"] == "future_sales_month"
+    assert obj.sql_agent.calls == []
+    assert result["verification"]["verified"] is False
+
+
+def test_future_sales_month_followup_reports_unavailable_actuals_without_sql():
+    obj = _orchestrator("SQL")
+    question = "Give me exact sales figures for a future month."
+    clarification = obj.answer(question)
+    result = obj.answer(
+        "January 2099",
+        clarification_context=clarification["clarification"],
+    )
+
+    assert result["route"] == "SQL"
+    assert "January 2099" in result["answer"]
+    assert "unavailable because that period is in the future" in result["answer"]
+    assert "No forecast was generated" in result["answer"]
+    assert obj.sql_agent.calls == []
+    assert result["verification"]["verified"] is False
+
+
+def test_future_month_explicit_in_original_question_never_falls_back_to_history():
+    obj = _orchestrator("SQL")
+    result = obj.answer("Give me exact sales figures for January 2099.")
+
+    assert result["route"] == "SQL"
+    assert "January 2099" in result["answer"]
+    assert result.get("sql") is None
+    assert obj.sql_agent.calls == []
+    assert result["verification"]["verified"] is False
+
+
+def test_hybrid_return_rate_with_missing_policy_evidence_is_not_fully_verified():
+    question = "What is NovaMart's overall return rate, and what does the return-policy document say about returns?"
+    sql_result = {
+        "sql": "SELECT return_count, order_count, return_rate_percent FROM returns;",
+        "validation": {"valid": True},
+        "query_plan": {"intent": "RETURN_RATE"},
+        "result": {"columns": ["return_count", "order_count", "return_rate_percent"], "rows": [[3585, 50000, 7.17]]},
+    }
+    obj = _orchestrator("BOTH", sql_result=sql_result, rag_result={"evidence": [], "sources": []})
+    obj.answer_composer = AnswerComposer()
+    result = obj.answer(question)
+
+    assert result["route"] == "BOTH"
+    assert "7.17%" in result["answer"]
+    assert "policy" in result["answer"].lower()
+    assert result["verification"]["verified"] is False
+
+
+def test_unknown_campaign_with_empty_rows_does_not_claim_revenue():
+    sql_result = {
+        "sql": "SELECT revenue_generated FROM marketing_campaigns WHERE campaign_id = 'CMP-999';",
+        "validation": {"valid": True},
+        "query_plan": {"intent": "REVENUE", "entity_id": "CMP-999"},
+        "result": {"columns": ["revenue_generated"], "rows": []},
+    }
+    obj = _orchestrator("SQL", sql_result=sql_result)
+    obj.answer_composer = AnswerComposer()
+    result = obj.answer("What was the revenue of campaign CMP-999?")
+
+    assert "matching data" in result["answer"].lower()
+    assert "I could not find" in result["answer"]
+    assert "revenue_generated" not in result["answer"].lower()
     assert result["verification"]["verified"] is False

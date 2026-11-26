@@ -1,180 +1,228 @@
 # AgentOps AI — NovaMart Intelligent Business Assistant
 
-**Project handoff:** Aashna → Anvi → Aru  
-**Current status:** Phases 1–4.4 are implemented and regression-tested; the Phase 4.5 local audit is complete. The Angular chat, supported SQL templates, RAG evidence flow, hybrid answers, clarification flow, and evidence verification are working. Final release readiness still requires a PrimeUI licensing decision and decisions about the explicitly deferred modules and production hardening.
+An intelligent business assistant that lets users ask natural-language questions about a fictional e-commerce and marketing business, **NovaMart**. It combines structured business data stored in PostgreSQL with business documents indexed using embeddings, then routes each question to SQL analytics, Retrieval-Augmented Generation (RAG), or a hybrid workflow.
 
-AgentOps AI is a college group project that answers natural-language questions about a fictional e-commerce and marketing business, NovaMart. It uses structured data in PostgreSQL and business documents indexed with embeddings in PostgreSQL/pgvector. A FastAPI backend routes questions to SQL, RAG, or both, then returns an answer to an Angular frontend.
+> **Dataset disclaimer:** NovaMart's datasets and business documents are synthetic and are used for demonstration and academic purposes.
 
-> **Dataset note:** NovaMart data and documents are synthetic and should be presented as such.
+## Overview
 
-## 1. Handoff summary
+AgentOps AI is designed to make business information easier to explore without manually querying databases or searching through documents. The application uses a deterministic orchestration and answer-composition workflow to return readable answers supported by structured query results and/or retrieved document evidence.
 
-### Work completed before Anvi's frontend work
-The project repository already contained the project structure, synthetic dataset/documents, database/schema scripts, SQL workflow, and RAG components. The precise split of earlier contributions should be confirmed by the group; this README does not assign individual ownership beyond the handoff note above.
+### Key capabilities
 
-### Implemented and tested in the current environment
-- PostgreSQL database `novamart` loaded with 12 business tables.
-- Tables reported loaded: customers (10,000), leads (15,000), marketing_campaigns (50), marketing_events (50,000), order_items (125,202), orders (50,000), payments (50,000), products (2,000), returns (3,585), sellers (500), shipments (50,000), support_tickets (9,970).
-- `document_chunks` table created with a `vector(384)` embedding column.
-- pgvector server extension installed; current environment reports extension version **0.8.6**.
-- Document ingestion completed: 36 documents processed, **204 chunks** inserted.
-- SQL test scripts passed for the supported campaign workflow.
-- RAG retrieval and the deterministic answer composer work without requiring a live LLM response.
-- Orchestration supports `SQL`, `RAG`, `BOTH`, and `CHAT` (greeting) routing.
-- FastAPI endpoints work, including `GET /health` and `POST /ask`.
-- **Angular** frontend connects to FastAPI through the Angular dev-server proxy (`proxy.conf.json`).
-- Document embeddings use the Sentence Transformers model `all-MiniLM-L6-v2` (384 dimensions, stored in pgvector). No paid embedding API is used.
-- A deterministic `VerificationAgent` checks that each answer is backed by SQL rows or retrieved document evidence.
-- Regression tests live in `tests/` (`pytest`). In this workspace, pytest is not installed in `backend/venv`; Phase 4.5 used the already-present root `.venv` pytest packages with the backend interpreter and did not install dependencies.
-- Assistant responses render Markdown with HTML escaping applied before Markdown conversion.
-- End-to-end SQL and hybrid campaign examples have been demonstrated.
+- **Natural-language business queries** through an Angular chat interface.
+- **SQL analytics** using supported, deterministic query templates over business tables.
+- **RAG-based document search** with semantic retrieval from ingested business documents.
+- **Hybrid answers** that combine structured metrics with relevant document evidence.
+- **Evidence verification** that checks answer support against SQL results and retrieved excerpts.
+- **Clarification and unsupported-query handling** for questions outside the supported templates.
+- **Markdown-formatted responses** in the chat UI, with HTML escaping before Markdown conversion.
+- **API health and interactive documentation** through FastAPI.
 
-### Answer generation is deterministic
-Answers are composed by `AnswerComposer`, a deterministic formatter that turns SQL result rows and retrieved RAG evidence into readable text. There is **no live LLM in the answer path**. The `LLMClient` class exists in `backend/app/llm/llm_client.py` but is not invoked by the orchestrator; it requires an OpenAI API key and account credits that are not configured. Do not promise live LLM-generated answers.
-
-### Important limitations to know
-- The SQL reasoner uses deterministic templates for customer, product, sales/order, seller, marketing, support-ticket, payment, shipment, and return analytics. It is not a general natural-language-to-SQL system; see the supported scope below.
-- **Answer generation is deterministic.** No live LLM is used. The `LLMClient` class is present but not wired into the orchestrator.
-- Verification checks that SQL claims are reproducible from returned rows, RAG claims and citations match selected excerpts, and hybrid answers use both sources. It is a focused deterministic check, not a general-purpose fact checker, and there is no retry/fallback loop.
-- The Angular Assistant is implemented. Overview, Agent Execution, Data Explorer, Knowledge & Evidence, and Evaluation & Verification are intentionally deferred and display a planned-module page.
-- The current PrimeNG 22 installation requires a genuine PrimeUI license key. No key is configured; the project owner must confirm eligibility and provide an authorized key before configuration. Once authorized, configure it through the `license` option in `providePrimeNG` in `frontend-angular/src/app/app.config.ts`; do not use a placeholder key.
-- The application has no user authentication or audit logging and is not production-hardened.
-- Casual greetings such as "hi" are handled by a dedicated `CHAT` route.
-- Confirm that the current repository's `.env` and configuration are safe before sharing. **Never send real secrets, API keys, or passwords in the handoff.**
-
-## 2. Architecture
+## Architecture
 
 ```text
-Angular frontend (frontend-angular/)
-        |
-        | POST /ask
-        v
-FastAPI backend
-        |
-        v
-Orchestrator
-   |      |      |
-  SQL    RAG    BOTH
-   |      |      |
-PostgreSQL + pgvector
-   \      |      /
-    Answer Composer
-          |
-      JSON response
-          |
-       Frontend
+                         Angular Frontend
+                                |
+                         POST /ask (Proxy)
+                                |
+                           FastAPI API
+                                |
+                          Orchestrator
+                     /          |          \
+                   SQL         RAG         BOTH
+                    |           |            |
+             PostgreSQL   Document Search    |
+                    |      + Embeddings      |
+                    |      + pgvector        |
+                    \___________|____________/
+                                |
+                      Answer Composer
+                                |
+                     Verification Agent
+                                |
+                       JSON API Response
+                                |
+                         Angular Chat UI
 ```
 
-### Main code locations
+### Routing modes
+
+| Route | Purpose |
+|---|---|
+| `SQL` | Answer supported business analytics questions using database query results. |
+| `RAG` | Answer document-focused questions using retrieved evidence. |
+| `BOTH` | Combine structured data and relevant document evidence. |
+| `CHAT` | Handle casual greetings and conversational messages. |
+
+## Tech Stack
+
+| Layer | Technologies |
+|---|---|
+| Frontend | Angular 22, TypeScript |
+| Backend | Python, FastAPI, Uvicorn |
+| Database | PostgreSQL 18 |
+| Vector search | pgvector 0.8.6 |
+| Embeddings | Sentence Transformers — `all-MiniLM-L6-v2` (384 dimensions) |
+| Database access | Psycopg 3 |
+| Validation | Pydantic, SQL validation |
+| Testing | Pytest, focused regression suites |
+| API documentation | FastAPI Swagger UI (`/docs`) |
+
+## Data and Knowledge Base
+
+The current database contains **12 business tables** loaded with synthetic NovaMart data:
+
+| Table | Approximate Records |
+|---|---:|
+| Customers | 10,000 |
+| Leads | 15,000 |
+| Marketing campaigns | 50 |
+| Marketing events | 50,000 |
+| Order items | 125,202 |
+| Orders | 50,000 |
+| Payments | 50,000 |
+| Products | 2,000 |
+| Returns | 3,585 |
+| Sellers | 500 |
+| Shipments | 50,000 |
+| Support tickets | 9,970 |
+
+The document knowledge base currently contains **36 processed documents and 204 document chunks**. Text is embedded with `all-MiniLM-L6-v2` and stored in PostgreSQL using pgvector.
+
+## Supported Business Analytics
+
+The deterministic SQL templates cover supported query patterns across:
+
+- Customer counts, distributions, segments, locations, loyalty tiers, status, and acquisition channels
+- Customer lifetime-value summaries and segment comparisons
+- Product rankings, categories, brands, inventory, low-stock items, prices, and ratings
+- Sales totals, average order value, monthly/region/category/product/channel summaries, and order statuses
+- Seller counts and performance
+- Marketing campaign rankings, ROI, comparisons, and event-channel metrics
+- Support-ticket breakdowns
+- Payment and shipment breakdowns
+- Return counts and return-rate calculations
+
+The SQL reasoner is **template-based, not a general natural-language-to-SQL system**. Free-form SQL, arbitrary compound filters, and unsupported analytics are not available.
+
+## Example Questions
+
+### SQL analytics
+- What were the results of campaign CMP-021?
+- What is the return rate?
+- Which products have the highest sales?
+- How are customers distributed across segments?
+
+### Document/RAG
+- What is NovaMart's return and refund policy?
+- What does the campaign strategy document recommend?
+
+### Hybrid
+- What were the results of campaign CMP-021 and what strategy was recommended?
+
+> The examples above demonstrate the supported workflows. Document-dependent responses should be verified against the documents available in the local setup.
+
+## Evidence and Verification
+
+The deterministic `VerificationAgent` checks whether:
+
+- SQL claims can be reproduced from the returned query rows.
+- RAG claims and citations align with the selected document excerpts.
+- Hybrid responses use both structured data and document evidence.
+
+This is a focused evidence check—not a general-purpose fact checker. The current implementation does not include an automatic retry/fallback loop.
+
+## Project Structure
 
 ```text
-backend/
-  app/
-    api/
-      main.py                    # FastAPI endpoints and CORS
-    orchestration/
-      orchestrator.py            # SQL/RAG/BOTH routing
-      answer_composer.py         # User-readable deterministic answers
-    rag/
-      document_loader.py
-      document_cleaner.py
-      chunker.py
-      embedder.py
-      vector_store.py
-      retriever.py
-      rag_agent.py
-    sql/                          # SQL agent/reasoner modules
-    llm/
-      llm_client.py               # Optional live LLM client
-frontend-angular/                 # Active Angular chat UI
-frontend/                         # Unused Vite template (ignore)
-scripts/
-tests/
-evaluation/
-data/
-docs/
-agentops_requirements.txt
+AgentOps-AI/
+├── backend/
+│   └── app/
+│       ├── api/                 # FastAPI endpoints
+│       ├── orchestration/       # Routing and answer composition
+│       ├── rag/                # Document ingestion, embedding, retrieval
+│       ├── sql/                 # SQL agent and supported query templates
+│       └── llm/                 # Optional LLM client (not active in answer path)
+├── frontend-angular/            # Active Angular frontend
+├── frontend/                    # Unused Vite template
+├── data/                         # Synthetic data and documents
+├── docs/                         # Project documentation
+├── scripts/                       # Setup, ingestion, and testing scripts
+├── tests/                          # Regression tests
+├── evaluation/                     # Evaluation resources
+└── agentops_requirements.txt       # Python dependencies
 ```
 
-Actual filenames may vary slightly in the checked-out repository; inspect the folders before editing.
+## Getting Started
 
-## 3. Environment requirements
+### Prerequisites
 
-Known working versions in the current development environment:
-- Windows 10/11
-- Python 3.12.4 (existing virtual environment at `backend/venv`; Python 3.12 is also the version noted in `agentops_requirements.txt`)
-- PostgreSQL **18.6** with pgvector extension **0.8.6**
-- sentence-transformers 6.1.0 (model `all-MiniLM-L6-v2`), torch 2.15.0
-- psycopg 3.3.6, pydantic 2.14.3
-- Node.js 26.13.1
-- npm 11.20.0
-- FastAPI 0.141.1
-- Uvicorn 0.53.0
-- **Angular ^22.2.0** with TypeScript ~6.0.2 (the active UI in `frontend-angular/`)
-- Markdown rendered by a custom safe-HTML formatter in `app.ts`
+- Windows 10/11 (the documented setup is Windows-oriented)
+- Python 3.12
+- PostgreSQL 18 with pgvector installed
+- Node.js and npm
+- Git
 
-The versions above describe the environment where the workflow was exercised, not a guarantee that every other machine has the same setup.
+> Versions listed here reflect the development environment used during project testing. Other compatible versions may require adjustments.
 
-## 4. Setup on a new Windows machine
+### 1. Clone the repository
 
-### A. Get the project
-Clone the group's repository or copy the complete `AgentOps-AI` folder from the current owner. Do not copy `node_modules`; npm can recreate it. Do not share a real `.env` file in public or group channels.
-
-Open PowerShell in the repository root:
-
-```powershell
-cd E:\Downloads\AgentOps-AI
+```bash
+git clone <YOUR_GITHUB_REPOSITORY_URL>
+cd AgentOps-AI
 ```
 
-Use the actual path where Aru stores the project if it differs.
+Replace `<YOUR_GITHUB_REPOSITORY_URL>` with the repository URL.
 
-### B. Set up Python dependencies
+### 2. Install Python dependencies
+
+From the project root:
 
 ```powershell
-python --version
 python -m pip install -r .\agentops_requirements.txt
 ```
 
-On the current machine, use the existing environment at `backend\venv`:
+If using the existing backend virtual environment:
 
 ```powershell
 .\backend\venv\Scripts\Activate.ps1
 ```
 
-The repository-root `.venv` is a stale copy whose configuration points to a missing Python 3.14 installation. Leave it untouched and use `backend\venv` instead. If dependencies fail, record the exact error rather than upgrading Python or packages at random.
+### 3. Configure PostgreSQL and pgvector
 
-### C. Install/check PostgreSQL and pgvector
-The backend expects a PostgreSQL server and a database named `novamart`. On a fresh machine:
-1. Install/start PostgreSQL.
-2. Install the pgvector server extension compatible with that PostgreSQL installation.
+1. Install and start PostgreSQL.
+2. Install a pgvector extension compatible with your PostgreSQL version.
 3. Create the `novamart` database.
-4. Load the project's schema and synthetic data using the repository's documented SQL/scripts.
-5. Run the document ingestion script so `document_chunks` contains the current **204** chunks.
-6. Confirm database connection settings before starting the API.
+4. Load the project schema and synthetic dataset using the SQL/scripts included in the repository.
+5. Run the document-ingestion script to populate `document_chunks`.
+6. Verify database connection settings before launching the backend.
 
-The exact schema/import command depends on the SQL/data files present in the repository. Inspect `README.md`, `scripts/`, and `data/`; do not assume the database is populated just because the code imports successfully.
+The exact data-loading commands depend on the scripts and SQL files included in the repository. Check the relevant setup scripts before running them.
 
-### D. Configure environment variables
-Review `.env.example` and create a local `.env` as needed. Keep credentials local. Database settings are loaded from `.env` by `backend/app/database_config.py` and passed to the SQL and RAG agents.
+### 4. Configure environment variables
 
-**There is no live LLM in the answer path.** The `LLMClient` class in `backend/app/llm/llm_client.py` is optional infrastructure and is not invoked by the orchestrator. It requires an OpenAI API key and account credits that are not configured. Do not promise live LLM-generated answers.
+Review `.env.example` and create a local `.env` file if required by the project. Keep database credentials and other secrets out of GitHub.
 
-### E. Start the backend
-From the repository root, in PowerShell terminal 1:
+**Never commit real passwords, API keys, tokens, or private database dumps.**
+
+### 5. Start the backend
+
+From the repository root, run:
 
 ```powershell
 python -m uvicorn backend.app.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-Keep this terminal open.
+Backend URLs:
 
-Check:
-- `http://127.0.0.1:8000/`
-- `http://127.0.0.1:8000/health`
-- `http://127.0.0.1:8000/docs`
+- API root: `http://127.0.0.1:8000/`
+- Health check: `http://127.0.0.1:8000/health`
+- Swagger documentation: `http://127.0.0.1:8000/docs`
 
-### F. Start the frontend
-In PowerShell terminal 2:
+### 6. Start the Angular frontend
+
+Open another terminal:
 
 ```powershell
 cd .\frontend-angular
@@ -182,63 +230,11 @@ npm install
 npm start
 ```
 
-The active frontend is the **Angular** application in `frontend-angular/`. The `frontend/` directory in the repository root is an unused Vite template and should be ignored.
+The Angular development server uses `proxy.conf.json` to proxy API requests to the FastAPI backend. The active frontend is `frontend-angular/`; the root `frontend/` directory is an unused Vite template.
 
-The dev server (`npm start`, i.e. `ng serve`) proxies `/api` to `http://127.0.0.1:8000` via `proxy.conf.json`. The backend CORS configuration allows `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:4200`, and `http://127.0.0.1:4200`. If the Angular dev server chooses a different port, update the allowed origins in `backend/app/api/main.py`.
+## API
 
-## 5. Demo questions that are known to work
-
-### SQL-only
-Ask:
-> What were the results of campaign CMP-021?
-
-Expected route: `SQL`
-
-Expected values:
-- Campaign: CMP-021
-- Name: NovaMart Growth Campaign 21
-- Spend: 1,840,000.00
-- Revenue: 5,270,000.00
-- Conversions: 3,812
-- Clicks: 47,919
-
-### RAG-only
-Ask:
-> What is NovaMart return and refund policy?
-
-Expected route: `RAG`
-
-This depends on the ingested documents and should be verified on the receiving machine.
-
-### Hybrid
-Ask:
-> What were the results of campaign CMP-021 and what strategy was recommended?
-
-Expected route: `BOTH`
-
-Expected to combine campaign metrics with relevant `Campaign Postmortem Cmp-021` and `Campaign Strategy` evidence. A retrieved excerpt was truncated, so do not present its missing ending as known fact.
-
-### Return metrics
-Ask:
-> What is the return rate?
-
-Expected route: `SQL`. Returns the total return count, total order count, and the computed return rate percentage.
-
-## 5b. Current structured SQL scope
-
-The current deterministic SQL templates cover customer counts and distributions by segment, location, loyalty tier, status, and acquisition channel; lifetime value summaries and segment comparisons; product rankings, category/brand distributions, inventory, low stock, price, and ratings; sales totals, average order value, monthly/region/category/product/channel summaries, and order statuses; seller counts and performance; campaign rankings, ROI, comparisons, and event-channel metrics; support-ticket breakdowns; and payment and shipment breakdowns. Templates use live-schema checks, the existing SELECT-only validator, parameterized year/day and stock-threshold filters, explicit joins, and bounded result counts. Product sales rankings join `products` to `order_items` by `product_id` and never substitute document counts for sales data.
-
-Representative questions from these templates were exercised through the existing Angular `/api/ask` proxy against the live database, alongside customer count, top product rankings, CMP-021, return metrics, and the return-policy RAG query.
-
-Questions that are NOT supported:
-- "Show leads by conversion stage": lead-stage aggregation has no dedicated template
-- Free-form SQL and arbitrary compound field filters
-
-The SQL reasoner supports only defined query patterns. It is not an arbitrary business-SQL generator. Generated SQL is always checked by `SQLValidator` (SELECT-only, single statement, real tables and columns; derived aliases such as `return_count` are accepted). Lead-stage analytics, arbitrary field-value filters, and combinations without a dedicated template remain unsupported and should return a structured-data limitation response.
-
-
-
-## 6. API contract
+### `POST /ask`
 
 Request:
 
@@ -248,80 +244,87 @@ Request:
 }
 ```
 
-Endpoint: `POST http://127.0.0.1:8000/ask`
+The response includes:
 
-The response model contains:
 - `question`
-- `route` (`SQL`, `RAG`, or `BOTH`)
+- `route` (`SQL`, `RAG`, `BOTH`, or conversational `CHAT` handling)
 - `answer`
 - `sources`
 
-The API also exposes `GET /` and `GET /health`. Swagger UI is available at `/docs`.
+Other available endpoints include `GET /` and `GET /health`. Interactive API documentation is available at `/docs`.
 
-## 7. Twelve-phase roadmap and handoff status
+## Testing and Validation
 
-This is the current working roadmap used for the handoff. The original master specification describes a 13-step implementation order; the team roadmap groups some implementation tasks together into 12 phases.
+The project has focused regression tests and SQL workflow tests. The current local audit reported successful checks for supported SQL workflows, RAG retrieval/evidence handling, orchestration routes, FastAPI endpoints, Angular integration through the development proxy, and frontend build/component tests.
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Environment and project foundation | Complete |
-| 2 | Synthetic dataset and documents | Complete |
-| 3 | PostgreSQL and pgvector setup | Complete in the current environment; repeat/verify on a new machine |
-| 4 | RAG pipeline | Implemented; existing index preserved and retrieval/evidence tests pass |
-| 5 | SQL agent, orchestration, and answer composition | Supported deterministic templates implemented; arbitrary natural-language SQL remains unsupported |
-| 6 | FastAPI API layer | Implemented and tested through the Angular proxy |
-| 7 | Angular frontend and API integration | Implemented; component tests and production build pass |
-| 8 | Verification/quality-control agent | Implemented as deterministic evidence checks; no retry/fallback loop |
-| 9 | Business analysis and report generation | Not implemented |
-| 10 | Evaluation framework and metrics | Focused pytest suites and a documented live-proxy verification matrix; no general benchmark runner |
-| 11 | Security, audit logging, and production hardening | Partial: SELECT-only validation and bounded query results; authentication and audit logging remain unimplemented |
-| 12 | End-to-end regression tests, documentation, and final demo/deployment | Local regression and documentation review complete; deployment/demo not performed |
-
-Do not mark a phase complete solely because its folder exists. Run its tests and record the evidence.
-
-## 8. Remaining project work
-
-- Confirm PrimeUI Community or Commercial eligibility, then configure a genuine key if authorized.
-- Implement or remove the deferred Overview, Agent Execution, Data Explorer, Knowledge & Evidence, and Evaluation & Verification modules according to product scope.
-- Decide whether business analysis/report generation is in scope.
-- Before production use, add authentication, audit logging, and deployment-specific hardening.
-- Keep the evaluation matrix aligned with any new supported questions and rerun the live proxy checks after backend changes.
-
-## 9. Useful commands
-
-From the repository root:
+Useful commands from the project root:
 
 ```powershell
-# Run known SQL tests
+# SQL agent tests
 python -m scripts.test_sql_agent
 python -m scripts.test_sql_agent_cases
 python -m scripts.test_sql_pipeline
 
-# Start API
+# Backend API
 python -m uvicorn backend.app.api.main:app --host 127.0.0.1 --port 8000
 
-# Full Python test suite. This workspace reuses the existing root .venv packages.
-$env:PYTHONPATH = "$PWD\.venv\Lib\site-packages;$env:PYTHONPATH"
-.\backend\venv\Scripts\python.exe -m pytest
-
-# Frontend dependencies and dev server
+# Frontend
 cd .\frontend-angular
-npm.cmd install
-npm.cmd start
+npm install
+npm start
 ```
 
-## Known limitations
-- Routing and query planning are deterministic and template-based; unsupported questions may be clarified or declined.
-- Answers use SQL rows and retrieved text; no live LLM generates answer prose.
-- Evidence is excerpted with length and source limits. Missing facets or unsupported claims remain unverified.
-- The Assistant works locally through the Angular development proxy. Production deployment and visual browser automation were not part of the final local regression run.
+For the full Python test suite, use the Python environment configured for the project and run:
 
-## 10. Handoff rules
+```powershell
+python -m pytest
+```
 
-- Work from a clean Git commit/branch when possible.
-- Do not overwrite working code without first saving/committing it.
-- Do not commit `.env`, API keys, passwords, database dumps containing private data, or `node_modules`.
-- Make one focused change at a time and run the relevant test immediately.
-- Keep SQL results, document evidence, and source metadata traceable.
-- Clearly label NovaMart as a synthetic dataset.
-- If a command fails, share the complete error and the command used before making broad environment changes.
+## Current Implementation Status
+
+| Component | Status |
+|---|---|
+| Project foundation and environment | Complete |
+| Synthetic dataset and documents | Complete |
+| PostgreSQL and pgvector setup | Complete in the current development environment |
+| Document ingestion and RAG pipeline | Implemented and tested |
+| SQL analytics | Supported deterministic templates implemented |
+| FastAPI API layer | Implemented and tested locally |
+| Angular chat frontend and API integration | Implemented; local build and tests reported passing |
+| Orchestration and answer composition | Implemented |
+| Evidence verification | Implemented as deterministic checks |
+| Business analysis/report generation module | Not implemented |
+| General evaluation benchmark runner | Not implemented; focused regression/evaluation checks exist |
+| Authentication and audit logging | Not implemented |
+| Production deployment/hardening | Not completed |
+| Overview, Agent Execution, Data Explorer, Knowledge & Evidence, Evaluation & Verification modules | Deferred/planned; currently show planned-module pages |
+
+## Important Limitations
+
+- **No live LLM answer generation:** answers are composed deterministically from SQL results and retrieved evidence. An optional `LLMClient` exists but is not wired into the orchestrator.
+- **SQL is template-based:** only defined query patterns are supported; it is not arbitrary natural-language-to-SQL.
+- **Verification is focused:** it checks evidence consistency but is not a general fact checker and does not have an automatic retry loop.
+- **Some UI modules are deferred:** only the Angular Assistant workflow is implemented as an active module.
+- **PrimeUI licensing decision pending:** the current PrimeNG 22 setup requires a licensing decision and an authorized key, if applicable, before final configuration.
+- **Not production-hardened:** authentication, audit logging, deployment configuration, and further security hardening remain future work.
+
+## Academic Project Context
+
+AgentOps AI is developed as a college group project. The repository handoff records the sequence **Ashna → Anvi → Aru**. Earlier contribution details should be confirmed by the group; this README does not make individual contribution claims beyond that handoff note.
+
+## Future Scope
+
+- Extend SQL analytics with more supported query patterns.
+- Implement or remove deferred dashboard and agent-observability modules based on scope.
+- Add business analysis and report generation if required.
+- Expand evaluation coverage and benchmark metrics.
+- Add authentication, audit logging, and production security hardening.
+- Evaluate and integrate live LLM answer generation if appropriate.
+- Deploy the application for broader access.
+
+## Team
+
+**AgentOps AI — NovaMart Intelligent Business Assistant**
+
+College group project. Please refer to the repository history and project documentation for contribution details.
+

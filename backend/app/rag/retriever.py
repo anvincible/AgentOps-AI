@@ -59,6 +59,7 @@ class Retriever:
         top_k: int = 5,
         document_types: list[str] | None = None,
         department: str | None = None,
+        document_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search document chunks semantically, then rerank them."""
 
@@ -90,6 +91,9 @@ class Retriever:
         if requested_department:
             filters.append("department = %s")
             filter_params.append(requested_department)
+        if document_id and document_id.strip():
+            filters.append("document_id = %s")
+            filter_params.append(document_id.strip().upper())
         if filters:
             type_filter = " AND " + " AND ".join(filters)
 
@@ -171,7 +175,7 @@ class Retriever:
         return {
             match.upper()
             for match in re.findall(
-                r"\b[A-Z][A-Z0-9]*-\d+\b",
+                r"\b(?:(?:DOC|CMP|PROD|SEL|CUST|ORD|RET)-[A-Za-z0-9-]+|[A-Z]+(?:-[A-Z0-9]+)*-\d+)\b",
                 text.upper(),
             )
         }
@@ -202,7 +206,7 @@ class Retriever:
             cls._extract_entity_ids(
                 " ".join(
                     str(item.get(field) or "")
-                    for field in ("title", "filename", "content")
+                    for field in ("document_id", "title", "filename", "content")
                 )
             )
         )

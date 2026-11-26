@@ -23,6 +23,22 @@ class DatabaseSchemaLoader:
         user: str = "postgres",
         password: str = "",
     ):
+        if not password:
+            try:
+                from backend.app.database_config import load_database_config
+                cfg = load_database_config()
+                password = str(cfg.get("password") or "")
+                if host == "localhost" and cfg.get("host"):
+                    host = str(cfg["host"])
+                if port == 5432 and cfg.get("port"):
+                    port = int(cfg["port"])
+                if database == "novamart" and cfg.get("database"):
+                    database = str(cfg["database"])
+                if user == "postgres" and cfg.get("user"):
+                    user = str(cfg["user"])
+            except Exception:
+                pass
+
         self.connection_string = (
             f"host={host} "
             f"port={port} "

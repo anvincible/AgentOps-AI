@@ -52,17 +52,28 @@ class Orchestrator:
         self.answer_composer = AnswerComposer()
         self.verification_agent = VerificationAgent()
         self.analysis_agent = AnalysisAgent()
+        try:
+            from backend.app.llm.llm_client import LLMClient
+            self.llm_client = LLMClient()
+        except Exception:
+            self.llm_client = None
 
     def answer(
         self,
         question: str,
         clarification_context: dict[str, Any] | None = None,
         department: str | None = None,
+        document_id: str | None = None,
     ) -> dict[str, Any]:
         """Automatically route a question, compose an answer, and verify it."""
 
         if not question or not question.strip():
             raise ValueError("Question cannot be empty.")
+
+        if not document_id:
+            doc_match = re.search(r"\b(DOC-[A-Z]+-\d+(?:-[A-Za-z0-9]+)?)\b", question, re.IGNORECASE)
+            if doc_match:
+                document_id = doc_match.group(1).upper()
 
         resolved_question = self._resolve_clarification(question, clarification_context)
         if resolved_question:
@@ -120,13 +131,15 @@ class Orchestrator:
                 route="CLARIFY",
                 question=question,
             )
+            meta = self._clarification_metadata(question, clarification)
             return {
                 "question": question,
                 "route": "CLARIFY",
                 "answer": answer,
                 "sources": [],
                 "verification": verification,
-                "clarification": self._clarification_metadata(question, clarification),
+                "clarification": meta,
+                "clarification_context": meta,
             }
 
         route = self._route_question(question)
@@ -295,6 +308,8 @@ class Orchestrator:
                 retrieval_options = {}
                 if department and department.strip():
                     retrieval_options["department"] = department.strip()
+                if document_id and document_id.strip():
+                    retrieval_options["document_id"] = document_id.strip()
                 response["rag"] = self.rag_agent.retrieve(
                     question,
                     **retrieval_options,
@@ -353,6 +368,34 @@ class Orchestrator:
         )
         if business_summary:
             self._attach_business_summary_verification(response, response["verification"])
+
+        # Populate top-level sources for callers
+        sources: list[dict[str, Any]] = []
+        if "sql" in response:
+            sources.append({
+                "type": "sql",
+                "title": "NovaMart PostgreSQL database",
+            })
+        if "rag" in response:
+            rag_result = response["rag"]
+            evidence = rag_result.get("evidence", [])
+            selected_evidence = self.answer_composer.select_relevant_evidence(
+                evidence,
+                response["question"],
+            )
+            for item in selected_evidence:
+                sources.append({
+                    "type": "document",
+                    "document_id": item.get("document_id"),
+                    "filename": item.get("filename"),
+                    "title": item.get("title"),
+                    "document_type": item.get("document_type"),
+                    "department": item.get("department"),
+                    "page_number": item.get("page_number"),
+                    "paragraph_number": item.get("paragraph_number"),
+                    "chunk_id": item.get("chunk_id"),
+                })
+        response["sources"] = sources
 
         return response
 
@@ -417,9 +460,21 @@ class Orchestrator:
                 "prompt": prompt,
             }
         if "campaign" in text and re.search(r"\b(compare|comparison|difference|differences|contrast)\b", text):
+            requires_hybrid = bool(
+                Orchestrator._contains_term(
+                    text,
+                    {
+                        "strategy", "recommend", "recommended", "recommendation",
+                        "recommendations", "postmortem", "document", "documents",
+                        "lessons learned", "why", "explanation", "factor", "factors",
+                    },
+                )
+            )
             return {
                 "original_question": question,
                 "kind": "campaign_comparison_targets",
+                "intended_route": "BOTH" if requires_hybrid else "SQL",
+                "requires_hybrid": requires_hybrid,
                 "options": [],
                 "prompt": prompt,
             }
@@ -466,7 +521,26 @@ class Orchestrator:
             )
             if not match or match.group(1).upper() == match.group(2).upper():
                 return None
-            return f"Compare campaigns {match.group(1).upper()} and {match.group(2).upper()}."
+            c1, c2 = match.group(1).upper(), match.group(2).upper()
+            if re.search(r"\bcampaign\s+CMP-\d+\b", original, re.IGNORECASE):
+                return re.sub(
+                    r"\bcampaign\s+CMP-\d+\b",
+                    f"campaigns {c1} and {c2}",
+                    original,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            elif re.search(r"\bCMP-\d+\b", original, re.IGNORECASE):
+                return re.sub(
+                    r"\bCMP-\d+\b",
+                    f"{c1} and {c2}",
+                    original,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            elif any(term in original.lower() for term in ("strategy", "postmortem", "recommendation", "recommendations", "document", "recommend")):
+                return f"Compare campaigns {c1} and {c2} spend and revenue, and summarize any documented recommendations."
+            return f"Compare campaigns {c1} and {c2}."
         if kind == "future_sales_month":
             match = re.fullmatch(
                 r"\s*([A-Za-z]+)\s+(20\d{2})\s*[.!]?\s*", reply
@@ -642,7 +716,11 @@ class Orchestrator:
             or re.search(r"\b20\d{2}\b", text)
             or bool(self.rag_agent._explicit_document_type_filter(question))
         )
-        if unsupported_filter and not supported_filter:
+        is_doc_or_policy = bool(re.search(
+            r"\b(policy|policies|guideline|guidelines|procedure|procedures|sop|terms|shipping|warranty|catalog)\b",
+            text,
+        ))
+        if unsupported_filter and not supported_filter and not is_doc_or_policy:
             return (
                 "That specific filter is not supported by the current SQL "
                 "templates. Would you like an unfiltered summary instead?"
@@ -875,17 +953,6 @@ class Orchestrator:
             campaign_id.upper()
             for campaign_id in re.findall(r"\bCMP-\d+\b", text, re.IGNORECASE)
         }
-        if campaign_comparison and len(comparison_ids) >= 2:
-            return "SQL"
-        if (
-            campaign_related
-            and re.search(r"\b(show|list|display)\b", text)
-            and re.search(r"\ball\b.{0,35}\bcampaigns?\b", text)
-            and re.search(r"\b(performance|results|metrics)\b", text)
-            and not re.search(r"\b(summary|summari[sz]e|overview|totals?)\b", text)
-        ):
-            return "SQL"
-
         explanation_signal = Orchestrator._contains_term(
             text,
             {
@@ -915,8 +982,30 @@ class Orchestrator:
                 },
             )
         )
+
+        if campaign_comparison and len(comparison_ids) >= 2:
+            if not explanation_signal and not campaign_document_framing:
+                return "SQL"
+            return "BOTH"
+        if (
+            campaign_related
+            and re.search(r"\b(show|list|display)\b", text)
+            and re.search(r"\ball\b.{0,35}\bcampaigns?\b", text)
+            and re.search(r"\b(performance|results|metrics)\b", text)
+            and not re.search(r"\b(summary|summari[sz]e|overview|totals?)\b", text)
+        ):
+            return "SQL"
+        campaign_metric_signal = Orchestrator._contains_term(
+            text,
+            {
+                "spend", "revenue", "conversions", "conversion", "clicks",
+                "click", "roi", "return on investment", "metrics", "metric",
+                "results", "financial performance", "performance",
+            }
+        )
         explicit_campaign_hybrid = campaign_document_framing and (
-            Orchestrator._contains_term(text, {"database results", "SQL results", "structured data"})
+            Orchestrator._contains_term(text, {"database results", "sql results", "structured data"})
+            or (campaign_metric_signal and explanation_signal)
             or (
                 Orchestrator._contains_term(text, {"metrics", "metric", "results", "financial performance"})
                 and explanation_signal
@@ -988,12 +1077,182 @@ class Orchestrator:
         if return_policy_hybrid:
             return "BOTH"
 
+        policy_metric_hybrid = (
+            policy_question
+            and has_sql_signal
+            and (
+                metric_signal
+                or bool(re.search(r"\b(how many|count|number of|total|database|registered)\b", text))
+            )
+        )
+        if policy_metric_hybrid:
+            return "BOTH"
+
         if policy_question:
             return "RAG"
 
+        # Warranty questions (coverage, duration, guide) require document evidence
+        # from product catalog and warranty guide (e.g. DOC-PRD-001 / DOC-PRD-003).
+        warranty_question = Orchestrator._contains_term(
+            text,
+            {
+                "warranty",
+                "warranty duration",
+                "warranty guide",
+                "warranty policy",
+                "warranty coverage",
+                "warranty period",
+            },
+        )
+        product_detail_signal = Orchestrator._contains_term(
+            text,
+            {
+                "price",
+                "unit price",
+                "details",
+                "product details",
+                "inventory",
+                "stock",
+                "sales",
+                "rating",
+                "seller",
+                "cost",
+            },
+        )
+        if warranty_question:
+            if product_detail_signal or has_sql_signal or metric_signal:
+                return "BOTH"
+            return "RAG"
+
+        # Strategy, playbook, and guideline questions without metric requests
+        # require document evidence (e.g. customer segmentation strategy DOC-MKT-030).
+        strategy_doc_question = Orchestrator._contains_term(
+            text,
+            {
+                "strategy",
+                "strategies",
+                "playbook",
+                "playbooks",
+                "guideline",
+                "guidelines",
+                "sop",
+            },
+        )
+        if strategy_doc_question and explanation_signal and not metric_signal:
+            return "RAG"
+
+        # Seller onboarding and operational-process questions require
+        # document evidence. Do this before the broad seller -> SQL rule,
+        # otherwise words such as "seller" incorrectly force every question
+        # about sellers to the structured-data agent.
+        seller_related = Orchestrator._contains_term(text, {"seller", "sellers"})
+        seller_process_question = seller_related and Orchestrator._contains_term(
+            text,
+            {
+                "onboarding",
+                "responsibility",
+                "responsibilities",
+                "workflow",
+                "process",
+                "procedure",
+                "procedures",
+                "steps",
+                "requirements",
+                "guidelines",
+                "documentation",
+                "verification",
+                "approval",
+                "activation",
+                "registration",
+            },
+        )
+        seller_metric_question = Orchestrator._contains_term(
+            text,
+            {
+                "count",
+                "how many",
+                "total",
+                "average",
+                "revenue",
+                "sales",
+                "orders",
+                "units sold",
+                "completion rate",
+                "percentage",
+                "trend",
+                "trends",
+                "compare",
+                "comparison",
+            },
+        )
+
+        if seller_process_question:
+            # Use both agents only when the question explicitly requests
+            # seller-process documentation and structured metrics together.
+            return "BOTH" if seller_metric_question else "RAG"
+
+        # Operational procedure / escalation questions for shipments (DOC-POL-002)
+        # require RAG retrieval unless only metrics/statistics are requested.
+        shipment_related = Orchestrator._contains_term(
+            text,
+            {"shipment", "shipments", "shipping", "delivery", "deliveries", "delivered"},
+        )
+        shipment_procedure_question = shipment_related and (
+            Orchestrator._contains_term(
+                text,
+                {
+                    "policy",
+                    "policies",
+                    "procedure",
+                    "procedures",
+                    "guideline",
+                    "guidelines",
+                    "escalate",
+                    "escalated",
+                    "escalation",
+                    "exception",
+                    "exceptions",
+                    "handling",
+                    "protocol",
+                },
+            )
+            or bool(
+                re.search(
+                    r"\b(what\s+should\s+happen|how\s+should\s+(?:it\s+be\s+handled|we\s+handle|exceptions|delays?)|what\s+to\s+do)\b",
+                    text,
+                )
+            )
+        )
+        shipment_metric_question = Orchestrator._contains_term(
+            text,
+            {
+                "count",
+                "how many",
+                "total",
+                "average",
+                "rate",
+                "percentage",
+                "statistics",
+                "stats",
+                "status",
+                "delay days",
+                "days",
+                "number of",
+                "top",
+                "breakdown",
+                "distribution",
+            },
+        )
+
+        if shipment_procedure_question:
+            return "BOTH" if shipment_metric_question else "RAG"
+
         if Orchestrator._contains_term(
             text,
-            {"seller", "sellers", "ticket", "tickets", "payment", "payments", "shipment", "shipments", "inventory", "stock"},
+            {
+                "seller", "sellers", "ticket", "tickets", "payment",
+                "payments", "shipment", "shipments", "inventory", "stock",
+            },
         ):
             return "SQL"
 

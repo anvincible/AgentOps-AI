@@ -382,6 +382,26 @@ LIMIT 10;
             validate("products", "product_id")
             return "SELECT COUNT(product_id) AS product_count FROM products;", ()
 
+        if intent == "PRODUCT_DETAILS":
+            validate("products", "product_id", "product_name", "category", "subcategory", "brand", "unit_price", "inventory_quantity", "active_status")
+            product_id = query_plan.get("product_id")
+            if not product_id:
+                raise ValueError("Product ID required for product details.")
+            sql = """
+SELECT
+    product_id,
+    product_name,
+    category,
+    subcategory,
+    brand,
+    unit_price,
+    inventory_quantity,
+    active_status
+FROM products
+WHERE product_id = %s;
+"""
+            return sql.strip(), (product_id,)
+
         if intent == "CUSTOMER_DISTRIBUTION":
             dimensions = {
                 "customer_segment", "city", "state", "country",

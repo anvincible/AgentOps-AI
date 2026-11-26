@@ -208,6 +208,17 @@ class SQLReasoner:
     def _reason_product_analytics(
         self, question: str, question_lower: str
     ) -> dict[str, Any]:
+        product_id_match = re.search(r"\bPROD-\d+\b", question, re.IGNORECASE)
+        if product_id_match:
+            pid = product_id_match.group(0).upper()
+            return self._analytics_plan(
+                question,
+                "PRODUCT_DETAILS",
+                ["products"],
+                [("products", col) for col in ("product_id", "product_name", "category", "subcategory", "brand", "unit_price", "inventory_quantity", "active_status")],
+                product_id=pid,
+                filters=[{"column": "product_id", "operator": "=", "value": pid}],
+            )
         if any(term in question_lower for term in ("sales by product", "revenue by product", "sales per product")):
             return self._analytics_plan(
                 question,

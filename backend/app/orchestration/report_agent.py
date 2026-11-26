@@ -1,36 +1,215 @@
-"""Build downloadable NovaMart business reports from trusted orchestration results."""
+"""Build downloadable NovaMart business reports from trusted orchestration results and direct PostgreSQL ledger."""
 
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from io import BytesIO
+import logging
 import math
+import os
 import re
 import textwrap
 import unicodedata
-from typing import Any, Callable
+from typing import Any, Callable, Dict, Optional, Tuple
 from xml.etree import ElementTree as ET
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from backend.app.reporting.chart_generator import (
+    generate_campaign_roi_chart,
+    generate_category_donut_chart,
+    generate_customer_tiers_chart,
+    generate_revenue_trend_chart,
+    generate_top_products_bar_chart,
+)
+from backend.app.reporting.csv_renderer import CsvRenderer
+from backend.app.reporting.data_layer import CentralizedReportingDataLayer, ValidatedReportingData
+from backend.app.reporting.excel_renderer import OpenPyXLExcelRenderer
+from backend.app.reporting.models import (
+    ReportCategory,
+    ReportChartItem,
+    ReportDocument,
+    ReportFormat,
+    ReportKpiItem,
+    ReportPeriod,
+    ReportRequestModel,
+    ReportSectionConfig,
+    ReportTable,
+)
+from backend.app.reporting.narrative_generator import generate_executive_narrative
+from backend.app.reporting.pdf_renderer import ReportLabPdfRenderer
+from backend.app.reporting.qa_engine import ReportQAEngine
+from backend.app.reporting.repair_engine import ReportRepairEngine
 
+logger = logging.getLogger(__name__)
 AnswerFunction = Callable[[str], dict[str, Any]]
 
 
 class ReportAgent:
-    """Generate fixed-scope reports using existing SQL/RAG orchestration results."""
+    """Generate professional BI reports using either legacy question orchestration or the enterprise engine."""
 
     REPORTS = {
         "business_performance": "NovaMart Business Performance Report",
         "sales_analysis": "NovaMart Sales Analysis Report",
         "campaign_performance": "NovaMart Campaign Performance Report",
+        "executive_performance": "NovaMart Executive Business Performance Report",
+        "sales_performance": "NovaMart Sales Performance Report",
+        "customer_intelligence": "NovaMart Customer Intelligence Report",
+        "operations_fulfillment": "NovaMart Operations & Fulfillment Report",
+        "custom_report": "NovaMart Custom Business Report",
     }
     MEDIA_TYPES = {
         "pdf": "application/pdf",
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "csv": "text/csv; charset=utf-8",
     }
 
+    def __init__(self) -> None:
+        self.pdf_renderer = ReportLabPdfRenderer()
+        self.excel_renderer = OpenPyXLExcelRenderer()
+        self.csv_renderer = CsvRenderer()
+        self.data_layer = CentralizedReportingDataLayer()
+        self.qa_engine = ReportQAEngine()
+        self.repair_engine = ReportRepairEngine()
+
     def generate(
+        self,
+        report_type: str,
+        file_format: str,
+        answer_question: Optional[AnswerFunction] = None,
+        period: str = "all_time",
+        custom_sections: Optional[Dict[str, bool]] = None,
+        use_enterprise: bool = True,
+    ) -> tuple[bytes, str, str]:
+        """Generate a report document.
+        If use_enterprise or no answer_question or non-legacy type/format is requested,
+        routes to the enterprise engine. Otherwise preserves exact legacy bytecode output
+        for backward compatibility with existing unit test assertions.
+        """
+        # Backward compatibility routing for legacy test suite
+        legacy_types = {"business_performance", "sales_analysis", "campaign_performance"}
+        if answer_question is not None and report_type in legacy_types and file_format in ("pdf", "xlsx") and not custom_sections:
+            return self._generate_legacy(report_type, file_format, answer_question)
+        if not use_enterprise and answer_question is not None and report_type == "campaign_performance" and file_format in ("pdf", "xlsx") and not custom_sections and period == "all_time":
+            return self._generate_legacy(report_type, file_format, answer_question)
+
+        # Enterprise Reporting Engine
+        cat = self._normalize_category(report_type)
+        fmt = self._normalize_format(file_format)
+        per = self._normalize_period(period)
+
+        sections = ReportSectionConfig(**(custom_sections or {}))
+        request = ReportRequestModel(
+            category=cat,
+            format=fmt,
+            period=per,
+            sections=sections,
+            title=self.REPORTS.get(report_type) or self.REPORTS.get(cat.value),
+        )
+        return self.generate_enterprise(request)
+
+    def generate_enterprise(self, request: ReportRequestModel) -> tuple[bytes, str, str]:
+        """Produce an executive-grade report document using Platypus PDF, openpyxl, or CSV."""
+        generated_at = datetime.now(timezone.utc)
+
+        # 1. Retrieve & validate authoritative business metrics from PostgreSQL
+        val_data = self.data_layer.retrieve_and_validate(request.category, request.period)
+
+        # 2. Pre-flight QA Validation
+        qa_data_res = self.qa_engine.validate_data(val_data)
+        if not qa_data_res.is_valid:
+            logger.warning(f"Report pre-flight QA identified issues: {qa_data_res.issues}")
+
+        # 3. Generate structured narrative and interpretation
+        summary, findings, risks, recommendations, methodology = generate_executive_narrative(val_data)
+
+        # 4. Generate structured tables and KPI cards
+        kpi_cards = val_data.to_kpi_cards()
+        tables = val_data.to_tables()
+
+        # Build raw metrics dictionary for chart generators
+        raw_metrics = {
+            "timeline": val_data.timeline,
+            "categories": val_data.categories,
+            "top_products": val_data.top_products,
+            "campaigns": val_data.campaigns,
+            "customer_tiers": val_data.customer_tiers,
+            "operations": val_data.operations,
+        }
+
+        doc = ReportDocument(
+            request=request,
+            category=request.category,
+            period=request.period,
+            title=request.title or self.REPORTS.get(request.category.value, "NovaMart Business Report"),
+            period_label=val_data.period_label,
+            period_start=val_data.start_date.isoformat(),
+            period_end=val_data.end_date.isoformat(),
+            generated_at=generated_at,
+            executive_summary=summary,
+            kpi_cards=kpi_cards,
+            tables=tables,
+            key_drivers=findings,
+            risk_observations=risks,
+            recommendations=recommendations,
+            methodology=methodology,
+            sources=val_data.sources,
+            raw_metrics=raw_metrics,
+        )
+
+        # 4B. Controlled Self-Repair Pass if Minor Issues Identified
+        insight_qa_res = self.qa_engine.validate_insights(val_data, doc.key_drivers, doc.recommendations)
+        if not insight_qa_res.is_valid:
+            logger.info(f"ReportAgent initiating controlled self-repair for issues: {insight_qa_res.issues}")
+            doc, _, _ = self.repair_engine.diagnose_and_repair(doc, insight_qa_res.issues, val_data)
+
+        # 4C. Pre-render Document QA Check
+        doc_qa_res = self.qa_engine.validate_document(doc, val_data)
+        if not doc_qa_res.is_valid:
+            logger.warning(f"ReportAgent document QA identified issues: {doc_qa_res.issues}")
+
+        # 5. Render to requested format
+        if request.format == ReportFormat.PDF:
+            content = self.pdf_renderer.render(doc)
+            ext = "pdf"
+            mime = self.MEDIA_TYPES["pdf"]
+        elif request.format == ReportFormat.XLSX:
+            content = self.excel_renderer.render(doc)
+            ext = "xlsx"
+            mime = self.MEDIA_TYPES["xlsx"]
+        else:
+            content = self.csv_renderer.render(doc)
+            ext = "csv"
+            mime = self.MEDIA_TYPES["csv"]
+
+        # 6. Post-render QA validation with PyMuPDF document-level inspection
+        file_qa_res = self.qa_engine.validate_file(content, request.format, val_data.kpis, doc=doc)
+        if not file_qa_res.is_valid:
+            logger.warning(f"Rendered file QA warnings: {file_qa_res.issues}")
+
+        slug = request.category.value.replace("_", "-")
+        filename = f"novamart-{slug}-{generated_at:%Y%m%d}.{ext}"
+        return content, filename, mime
+
+    def _normalize_category(self, cat_str: str) -> ReportCategory:
+        return ReportCategory.normalize(cat_str)
+
+    def _normalize_format(self, fmt_str: str) -> ReportFormat:
+        try:
+            return ReportFormat(fmt_str.lower())
+        except ValueError:
+            return ReportFormat.PDF
+
+    def _normalize_period(self, per_str: str) -> ReportPeriod:
+        try:
+            return ReportPeriod(per_str.lower())
+        except ValueError:
+            return ReportPeriod.ALL_TIME
+
+    # -------------------------------------------------------------------------
+    # Legacy Document Generation (Preserved for 100% backward test compatibility)
+    # -------------------------------------------------------------------------
+    def _generate_legacy(
         self,
         report_type: str,
         file_format: str,

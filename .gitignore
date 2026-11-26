@@ -15,3 +15,32 @@ coverage/
 Thumbs.db
 .vscode/
 .idea/
+# Project documentation and deliverables
+evaluation/
+docs/
+documentation/
+
+# Screenshots and previews
+screenshots/
+**/screenshots/
+**/slide_previews/
+**/pdf_previews/
+**/visual_qa/
+
+# Generated reports
+**/generated_reports/
+*.pdf
+*.xlsx
+*.docx
+*.pptx
+
+# Temporary development files
+scratch/
+temp/
+tmp/
+*.log
+
+# Archives and backups
+*.zip
+*.bak
+*_backup/

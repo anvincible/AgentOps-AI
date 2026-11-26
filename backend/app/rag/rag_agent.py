@@ -43,6 +43,7 @@ class RAGAgent:
         self,
         question: str,
         department: str | None = None,
+        document_id: str | None = None,
     ) -> dict[str, Any]:
         """Retrieve and rank evidence for a question."""
 
@@ -51,6 +52,9 @@ class RAGAgent:
 
         retrieval_query = self._expand_retrieval_query(question)
         document_types = self._explicit_document_type_filter(question)
+        document_types, resolved_department = self.normalize_department_filter(
+            department, document_types
+        )
         search_options: dict[str, Any] = {
             "query": retrieval_query,
             "top_k": max(self.top_k * 5, 25),
@@ -59,10 +63,17 @@ class RAGAgent:
         # explicitly asks for a metadata document type.
         if document_types:
             search_options["document_types"] = document_types
-        if department and department.strip():
-            search_options["department"] = department.strip()
+        if resolved_department and resolved_department.strip():
+            search_options["department"] = resolved_department.strip()
+        if document_id and document_id.strip():
+            search_options["document_id"] = document_id.strip().upper()
 
         results = self.retriever.search(**search_options)
+        if not results and document_id:
+            # Fallback without strict document_id filter if 0 results
+            fallback_options = dict(search_options)
+            fallback_options.pop("document_id", None)
+            results = self.retriever.search(**fallback_options)
         results = [
             item for item in results
             if float(item.get("similarity", 0.0))
@@ -102,12 +113,22 @@ class RAGAgent:
             additions.append(
                 "return refund policy return window eligible item purchase days"
             )
-        if re.search(r"\b(shipping|deliver(?:y|ies)|send(?:ing)? a package)\b", text):
+        if re.search(r"\b(shipping|deliver(?:y|ies)|shipment|shipments|send(?:ing)? a package)\b", text):
             additions.append(
-                "shipping delivery timeframe dispatch delay delivery exception"
+                "shipping delivery timeframe dispatch delay delivery exceptions escalation materially delayed customer impact"
+            )
+        if re.search(r"\b(customer\s+segment|customer\s+segments|segmentation|premium\s+customers?)\b", text):
+            additions.append(
+                "customer segmentation strategy premium loyal growth new value lifetime retention criteria priority decision rule"
+            )
+        if re.search(r"\bseller\b", text) and re.search(r"\b(onboarding|workflow|steps?|sop|procedure)\b", text):
+            additions.append(
+                "seller onboarding sop step 1 identity step 2 category step 3 catalog review step 4 activation"
             )
         if re.search(r"\bcustomer service policy\b", text):
             additions.append("customer support service policy refund dispute")
+        if re.search(r"\bwarranty\b", text):
+            additions.append("warranty guide duration coverage period product repair replacement")
         cmp021_postmortem = bool(re.search(r"\bcmp-021\b", text, re.IGNORECASE)) and bool(
             re.search(
                 r"\b(postmortem|strategy|strategies|recommend(?:ed|ation|ations)?|"
@@ -148,6 +169,69 @@ class RAGAgent:
             "report": ["REPORTS"],
             "reports": ["REPORTS"],
         }[match.group(1)]
+
+    @classmethod
+    def normalize_department_filter(
+        cls,
+        department: str | None,
+        explicit_document_types: list[str] | None = None,
+    ) -> tuple[list[str] | None, str | None]:
+        """
+        Normalize user-friendly department or document category filters.
+
+        Handles common aliases:
+        - 'Policy' / 'Policies' -> document_types = ['POLICIES'] (since Policy is a doc type, not a department)
+        - 'Product' / 'Products' -> document_types = ['PRODUCTS']
+        - 'Report' / 'Reports' -> document_types = ['REPORTS']
+        - 'Operations' / 'Marketing' / 'Business Operations' -> matches canonical 'Marketing / Business Operations'
+        """
+        if not department or not department.strip():
+            return explicit_document_types, None
+
+        normalized = department.strip()
+        dept_lower = normalized.lower()
+
+        # If user specified a document category as department
+        type_mappings = {
+            "policy": ["POLICIES"],
+            "policies": ["POLICIES"],
+            "product": ["PRODUCTS"],
+            "products": ["PRODUCTS"],
+            "report": ["REPORTS"],
+            "reports": ["REPORTS"],
+            "operation": ["OPERATIONS"],
+            "operations": ["OPERATIONS"],
+        }
+        # In NovaMart DB, the actual stored department is 'Marketing / Business Operations' for all documents.
+        # If the input exactly matches a known doc-type name, treat it as a doc-type restriction
+        # when no explicit document_types were already provided.
+        if dept_lower in {"policy", "policies"}:
+            types = explicit_document_types or ["POLICIES"]
+            return types, None
+
+        if dept_lower in {"product", "products"}:
+            types = explicit_document_types or ["PRODUCTS"]
+            return types, None
+
+        if dept_lower in {"report", "reports"}:
+            types = explicit_document_types or ["REPORTS"]
+            return types, None
+
+        canonical_dept = "Marketing / Business Operations"
+        if dept_lower in {
+            "marketing",
+            "business operations",
+            "marketing / business operations",
+            "marketing & business operations",
+        }:
+            return explicit_document_types, canonical_dept
+
+        # For "operations", if no document_types specified, keep it as doc_type or canonical department
+        if dept_lower in {"operations", "operation"}:
+            # Keep as canonical department so it matches stored chunks
+            return explicit_document_types, canonical_dept
+
+        return explicit_document_types, normalized
 
     @staticmethod
     def _deduplicate_chunks(
@@ -200,7 +284,7 @@ class RAGAgent:
                 for entity in query_entities
             )
             entity_in_title = any(
-                cls._contains_entity(title + " " + filename, entity)
+                cls._contains_entity(f"{title} {filename} {str(item.get('document_id') or '')}", entity)
                 for entity in query_entities
             )
             entity_in_metadata = any(
@@ -215,7 +299,7 @@ class RAGAgent:
             if entity_in_content:
                 score += 0.40
             elif entity_in_title:
-                score += 0.25
+                score += 0.35
             elif entity_in_metadata:
                 score += 0.03
 
@@ -274,6 +358,23 @@ class RAGAgent:
         if not requested:
             return ranked
 
+        # For product-specific warranty queries, verify that at least one chunk
+        # explicitly links to the requested product ID. If no matching warranty evidence
+        # exists for that product, abstain rather than returning general warranty guides.
+        product_warranty_query = any(e.startswith("PROD-") for e in requested) and "warranty" in question.lower()
+        if product_warranty_query:
+            prod_ids = [e for e in requested if e.startswith("PROD-")]
+            has_matching_product = any(
+                item.get("entity_match")
+                or any(
+                    bool(re.search(rf"\b{re.escape(prod_id)}\b", f"{item.get('title')} {item.get('filename')} {item.get('content')} {' '.join(str(v) for v in item.get('related_entity_ids', []))}".upper()))
+                    for prod_id in prod_ids
+                )
+                for item in ranked
+            )
+            if not has_matching_product:
+                return []
+
         kept = []
         for item in ranked:
             if item.get("entity_match"):
@@ -287,10 +388,14 @@ class RAGAgent:
             if not isinstance(related, str):
                 related = " ".join(str(value) for value in related)
 
-            mentioned = cls._extract_entity_ids(
-                f"{title} {filename} {content} {related}"
-            )
-            if not mentioned:
+            all_text = f"{title} {filename} {content} {related}"
+            # If the item directly mentions any requested entity, keep it
+            if any(bool(re.search(rf"\b{re.escape(e)}\b", all_text.upper())) for e in requested):
+                kept.append(item)
+                continue
+
+            mentioned = cls._extract_entity_ids(all_text)
+            if not mentioned and not product_warranty_query:
                 kept.append(item)
 
         return kept
@@ -298,7 +403,10 @@ class RAGAgent:
     @staticmethod
     def _extract_entity_ids(text: str) -> list[str]:
         return list(dict.fromkeys(
-            re.findall(r"\b[A-Z][A-Z0-9]*-\d+\b", text.upper())
+            re.findall(
+                r"\b(?:(?:DOC|CMP|PROD|SEL|CUST|ORD|RET)-[A-Za-z0-9-]+|[A-Z]+(?:-[A-Z0-9]+)*-\d+)\b",
+                text.upper(),
+            )
         ))
 
     @staticmethod

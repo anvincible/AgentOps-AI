@@ -10,6 +10,9 @@ from pydantic import BaseModel
 from backend.app.database_config import load_database_config
 from backend.app.api.report_endpoint import build_report_response
 from backend.app.api.readiness import check_database_readiness
+from backend.app.api.documents_endpoint import router as documents_router
+from backend.app.api.data_endpoint import router as data_router
+from backend.app.api.dashboard_endpoint import router as dashboard_router
 from backend.app.orchestration.orchestrator import Orchestrator
 from backend.app.orchestration.report_agent import ReportAgent
 from backend.app.safe_logging import log_sanitized_exception
@@ -36,16 +39,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(documents_router)
+app.include_router(data_router)
+app.include_router(dashboard_router)
+
 
 class QuestionRequest(BaseModel):
     question: str
     clarification_context: dict[str, Any] | None = None
     department: str | None = None
+    document_id: str | None = None
 
 
 class ReportRequest(BaseModel):
-    report_type: Literal["business_performance", "sales_analysis", "campaign_performance"]
-    format: Literal["pdf", "xlsx"]
+    report_type: Literal[
+        "business_performance",
+        "sales_analysis",
+        "campaign_performance",
+        "executive_performance",
+        "sales_performance",
+        "customer_intelligence",
+        "operations_fulfillment",
+        "custom_report",
+    ] = "executive_performance"
+    format: Literal["pdf", "xlsx", "csv"] = "pdf"
+    period: Literal["all_time", "this_year", "last_90_days", "last_30_days", "last_7_days"] = "all_time"
+    title: str | None = None
+    sections: dict[str, bool] | None = None
 
 
 class Source(BaseModel):
@@ -124,6 +144,8 @@ def ask_question(
         }
         if request.department and request.department.strip():
             answer_options["department"] = request.department.strip()
+        if request.document_id and request.document_id.strip():
+            answer_options["document_id"] = request.document_id.strip()
         result = orchestrator.answer(request.question, **answer_options)
 
         sources = []
@@ -188,14 +210,19 @@ def ask_question(
 
 
 @app.post("/reports")
+@app.post("/api/reports")
 def create_report(request: ReportRequest) -> Response:
     """Generate a report from predefined backend-owned questions and validated results."""
     try:
         return build_report_response(
-            report_agent,
-            request.report_type,
-            request.format,
-            orchestrator.answer,
+            report_agent=report_agent,
+            report_type=request.report_type,
+            file_format=request.format,
+            answer_question=orchestrator.answer,
+            period=request.period,
+            custom_sections=request.sections,
+            title=request.title,
+            use_enterprise=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

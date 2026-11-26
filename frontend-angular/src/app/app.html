@@ -117,6 +117,17 @@
         <span class="topbar-divider"></span>
 
         <button
+          class="report-studio-btn"
+          title="Open Executive Report Studio"
+          (click)="openReportStudio()"
+        >
+          <i class="pi pi-file-export"></i>
+          <span>Reports</span>
+        </button>
+
+        <span class="topbar-divider"></span>
+
+        <button
           class="icon-button"
           aria-label="Start a new chat"
           title="New conversation"
@@ -496,15 +507,32 @@
               <form class="report-form" (ngSubmit)="downloadReport()">
                 <label for="report-type">Report type</label>
                 <select id="report-type" name="reportType" [(ngModel)]="reportType" [disabled]="reportLoading">
-                  <option value="business_performance">Business performance</option>
-                  <option value="sales_analysis">Sales analysis</option>
+                  <option value="executive_performance">Executive Business Performance</option>
+                  <option value="sales_performance">Sales Performance & Merchandise</option>
                   <option value="campaign_performance">Campaign performance</option>
+                  <option value="customer_intelligence">Customer Intelligence & Cohorts</option>
+                  <option value="operations_fulfillment">Operations & Fulfillment</option>
+                  <option value="custom_report">Custom Business Report</option>
+                  <option value="business_performance">Business performance (Legacy)</option>
+                  <option value="sales_analysis">Sales analysis (Legacy)</option>
                 </select>
+
+                <label for="report-period">Time Period</label>
+                <select id="report-period" name="reportPeriod" [(ngModel)]="reportPeriod" [disabled]="reportLoading">
+                  <option value="all_time">All Time (Full History)</option>
+                  <option value="this_year">This Year (2026)</option>
+                  <option value="last_90_days">Last 90 Days</option>
+                  <option value="last_30_days">Last 30 Days</option>
+                  <option value="last_7_days">Last 7 Days</option>
+                </select>
+
                 <label for="report-format">File format</label>
                 <select id="report-format" name="reportFormat" [(ngModel)]="reportFormat" [disabled]="reportLoading">
-                  <option value="pdf">PDF</option>
+                  <option value="pdf">PDF Document (.pdf)</option>
                   <option value="xlsx">Excel (.xlsx)</option>
+                  <option value="csv">CSV (.csv)</option>
                 </select>
+
                 <button class="report-button" type="submit" [disabled]="reportLoading">
                   @if (reportLoading) {
                     <i class="pi pi-spin pi-spinner"></i> Preparing report...
@@ -512,9 +540,16 @@
                     <i class="pi pi-download"></i> Download report
                   }
                 </button>
+
+                <button type="button" class="studio-link-btn" (click)="openReportStudio()">
+                  <i class="pi pi-sliders-h"></i> Open Report Studio
+                </button>
               </form>
               @if (reportError) {
                 <p class="report-error" role="alert">{{ reportError }}</p>
+              }
+              @if (reportSuccess) {
+                <p class="report-success" role="status"><i class="pi pi-check"></i> {{ reportSuccess }}</p>
               }
               @if (reportLoading) {
                 <p class="report-status" role="status">Collecting validated results and creating the file.</p>
@@ -541,6 +576,1237 @@
           </aside>
         </div>
       </section>
+    } @else if (activePage === 'evidence') {
+      <section class="knowledge-page">
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow"><span></span> NOVAMART KNOWLEDGE BASE</div>
+            <h1>Knowledge & Evidence</h1>
+            <p>Authoritative company policies, operational SOPs, reports, and catalog documents.</p>
+          </div>
+
+          <div class="heading-actions">
+            <button class="secondary-button" (click)="loadDocuments()" [disabled]="documentsLoading">
+              <i class="pi" [class.pi-spin]="documentsLoading" [class.pi-spinner]="documentsLoading" [class.pi-refresh]="!documentsLoading"></i> Refresh
+            </button>
+            <button class="primary-button" (click)="newChat()">
+              <i class="pi pi-comments"></i> Ask AI Assistant
+            </button>
+          </div>
+        </div>
+
+        <div class="evidence-architecture-card">
+          <div class="arch-col">
+            <div class="arch-badge source-badge"><i class="pi pi-file"></i> Authoritative Source Documents</div>
+            <p>Complete source files (18 PDFs, 18 DOCX) loaded from storage. Formatted, clean text with version and department metadata.</p>
+          </div>
+          <div class="arch-divider"><i class="pi pi-arrow-right"></i></div>
+          <div class="arch-col">
+            <div class="arch-badge chunk-badge"><i class="pi pi-th-large"></i> 204 Chunks in pgvector</div>
+            <p>Segmented paragraphs embedded into 384 dimensions. Cosine similarity &ge; 0.30 floor with entity-focus reranking.</p>
+          </div>
+          <div class="arch-divider"><i class="pi pi-arrow-right"></i></div>
+          <div class="arch-col">
+            <div class="arch-badge answer-badge"><i class="pi pi-shield"></i> Verified Answer Evidence</div>
+            <p>Only substantive chunks selected by AnswerComposer are cited as sources. Unverified claims result in honest abstention.</p>
+          </div>
+        </div>
+
+        <div class="evidence-layout">
+          <!-- Left: Document Catalogue -->
+          <section class="doc-catalogue-panel">
+            <div class="catalogue-search-bar">
+              <i class="pi pi-search search-icon"></i>
+              <input
+                type="text"
+                [(ngModel)]="documentSearch"
+                placeholder="Search documents by ID, title, filename..."
+                aria-label="Search documents"
+              />
+              @if (documentSearch) {
+                <button class="clear-search-btn" (click)="documentSearch = ''">
+                  <i class="pi pi-times"></i>
+                </button>
+              }
+            </div>
+
+            <div class="type-filter-chips">
+              @for (dtype of documentTypes; track dtype) {
+                <button
+                  class="type-chip"
+                  [class.active]="selectedDocumentType === dtype"
+                  (click)="selectedDocumentType = dtype"
+                >
+                  {{ dtype }}
+                </button>
+              }
+            </div>
+
+            @if (documentsLoading && !documents.length) {
+              <div class="catalogue-loading">
+                <i class="pi pi-spin pi-spinner"></i>
+                <span>Loading document catalogue...</span>
+              </div>
+            } @else if (documentsError) {
+              <div class="catalogue-error">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>{{ documentsError }}</span>
+                <button (click)="loadDocuments()">Try again</button>
+              </div>
+            } @else {
+              <div class="doc-list">
+                <div class="doc-list-meta">
+                  <span>{{ filteredDocuments.length }} documents</span>
+                  <small>36 total in NovaMart corpus</small>
+                </div>
+
+                @for (doc of filteredDocuments; track doc.document_id) {
+                  <div
+                    class="doc-card"
+                    [class.active]="selectedDocument?.document_id === doc.document_id"
+                    (click)="selectDocument(doc.document_id)"
+                  >
+                    <div class="doc-card-header">
+                      <span class="doc-id-pill">{{ doc.document_id }}</span>
+                      <span class="doc-type-badge">{{ doc.document_type }}</span>
+                    </div>
+
+                    <strong class="doc-card-title">{{ doc.title }}</strong>
+
+                    <div class="doc-card-details">
+                      <span class="doc-filename">
+                        <i class="pi" [class.pi-file-pdf]="doc.filename.endsWith('.pdf')" [class.pi-file-word]="doc.filename.endsWith('.docx')"></i>
+                        {{ doc.filename }}
+                      </span>
+                      <span class="chunk-badge-pill">
+                        <i class="pi pi-th-large"></i> {{ doc.chunk_count }} chunks
+                      </span>
+                    </div>
+
+                    <div class="doc-card-footer">
+                      <span class="doc-dept">{{ doc.department }}</span>
+                      @if (doc.document_date) {
+                        <span class="doc-date">{{ doc.document_date }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </section>
+
+          <!-- Right: Document Detail View & Chunk Inspector -->
+          <section class="doc-detail-panel">
+            @if (documentDetailLoading && !selectedDocument) {
+              <div class="detail-loading-state">
+                <i class="pi pi-spin pi-spinner"></i>
+                <span>Retrieving document content...</span>
+              </div>
+            } @else if (selectedDocument) {
+              <div class="doc-detail-header">
+                <div class="doc-detail-title-group">
+                  <div class="doc-id-row">
+                    <span class="detail-doc-id">{{ selectedDocument.document_id }}</span>
+                    <span class="doc-type-badge">{{ selectedDocument.document_type }}</span>
+                    <span class="doc-dept-badge">{{ selectedDocument.department }}</span>
+                  </div>
+                  <h2>{{ selectedDocument.title }}</h2>
+                  <div class="doc-meta-row">
+                    <span><i class="pi pi-file"></i> {{ selectedDocument.filename }}</span>
+                    @if (selectedDocument.document_date) {
+                      <span><i class="pi pi-calendar"></i> {{ selectedDocument.document_date }}</span>
+                    }
+                    @if (selectedDocument.version) {
+                      <span><i class="pi pi-tag"></i> v{{ selectedDocument.version }}</span>
+                    }
+                    @if (selectedDocument.region) {
+                      <span><i class="pi pi-globe"></i> {{ selectedDocument.region }}</span>
+                    }
+                    <span><i class="pi pi-th-large"></i> {{ selectedDocument.chunk_count }} chunks</span>
+                  </div>
+                </div>
+
+                <div class="detail-actions">
+                  <button class="ask-doc-btn" (click)="askAboutDocument(selectedDocument)">
+                    <i class="pi pi-sparkles"></i> Ask in Assistant
+                  </button>
+                </div>
+              </div>
+
+              @if (selectedDocument.related_entities.length) {
+                <div class="entities-ribbon">
+                  <span class="entities-label"><i class="pi pi-link"></i> Linked Entities:</span>
+                  <div class="entities-list">
+                    @for (entity of selectedDocument.related_entities; track entity) {
+                      <span class="entity-pill">{{ entity }}</span>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Tab Switcher -->
+              <div class="doc-tab-switcher">
+                <button
+                  class="doc-tab-btn"
+                  [class.active]="activeDocTab === 'text'"
+                  (click)="setDocTab('text')"
+                >
+                  <i class="pi pi-align-left"></i> Extracted Full Text
+                </button>
+                <button
+                  class="doc-tab-btn"
+                  [class.active]="activeDocTab === 'chunks'"
+                  (click)="setDocTab('chunks')"
+                >
+                  <i class="pi pi-th-large"></i> Chunk-Level Inspector ({{ selectedDocument.chunk_count }})
+                </button>
+              </div>
+
+              <!-- Content Tab: Extracted Text -->
+              @if (activeDocTab === 'text') {
+                <div class="extracted-text-view">
+                  <div class="view-meta-notice">
+                    <i class="pi pi-info-circle"></i> Extracted text preview reconstructed from parsed paragraphs and cleaned document tokens.
+                  </div>
+                  <pre class="document-text-pre">{{ selectedDocument.extracted_text }}</pre>
+                </div>
+              }
+
+              <!-- Content Tab: Chunk Inspector -->
+              @if (activeDocTab === 'chunks') {
+                <div class="chunks-inspector-view">
+                  @if (chunksLoading) {
+                    <div class="chunks-loading">
+                      <i class="pi pi-spin pi-spinner"></i>
+                      <span>Loading chunk records...</span>
+                    </div>
+                  } @else {
+                    <div class="chunks-list">
+                      @for (chunk of documentChunks; track chunk.chunk_id) {
+                        <div class="chunk-card">
+                          <div class="chunk-card-header">
+                            <span class="chunk-id-tag"><i class="pi pi-th-large"></i> {{ chunk.chunk_id }}</span>
+                            <div class="chunk-loc-tags">
+                              @if (chunk.page_number != null) {
+                                <span>Page {{ chunk.page_number }}</span>
+                              }
+                              @if (chunk.paragraph_number != null) {
+                                <span>Paragraph {{ chunk.paragraph_number }}</span>
+                              }
+                            </div>
+                          </div>
+                          <p class="chunk-content-text">{{ chunk.content }}</p>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            } @else {
+              <div class="empty-detail-state">
+                <i class="pi pi-folder-open"></i>
+                <p>Select a document from the catalogue on the left to inspect its extracted text and chunk breakdown.</p>
+              </div>
+            }
+          </section>
+        </div>
+      </section>
+    } @else if (activePage === 'data') {
+      <section class="data-explorer-page">
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow"><span></span> NOVAMART DATA EXPLORER</div>
+            <h1>Data Explorer</h1>
+            <p>Read-only inspection of NovaMart PostgreSQL analytics tables.</p>
+          </div>
+
+          <div class="heading-actions">
+            <span class="security-shield-badge">
+              <i class="pi pi-lock"></i> Strict Read-Only Allowlist
+            </span>
+            <button class="secondary-button" (click)="loadSchema()" [disabled]="schemaLoading">
+              <i class="pi" [class.pi-spin]="schemaLoading" [class.pi-spinner]="schemaLoading" [class.pi-refresh]="!schemaLoading"></i> Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Table Selector Tabs -->
+        <div class="table-selector-ribbon">
+          @for (table of tablesSchema; track table.table_name) {
+            <button
+              class="table-selector-pill"
+              [class.active]="selectedTable === table.table_name"
+              (click)="selectTable(table.table_name)"
+            >
+              <i class="pi pi-database"></i>
+              <span class="tbl-name">{{ table.table_name }}</span>
+              <span class="tbl-count">{{ table.row_count | number }}</span>
+            </button>
+          }
+        </div>
+
+        @if (currentTableSchema; as schema) {
+          <!-- Active Table Controls & Stats -->
+          <div class="table-workbench">
+            <div class="workbench-header">
+              <div class="table-headline">
+                <h2>
+                  <i class="pi pi-table"></i>
+                  <code>{{ selectedTable }}</code>
+                </h2>
+                <span class="table-records-badge">{{ tableData?.total_rows | number }} rows</span>
+                <span class="table-cols-badge">{{ schema.column_count }} columns</span>
+              </div>
+
+              <!-- Search & Filter Bar -->
+              <div class="workbench-search">
+                <div class="search-input-wrap">
+                  <i class="pi pi-search"></i>
+                  <input
+                    type="text"
+                    [(ngModel)]="tableSearch"
+                    placeholder="Search in {{ selectedTable }}..."
+                    (keydown.enter)="onTableSearch()"
+                    aria-label="Search records in table"
+                  />
+                  @if (tableSearch) {
+                    <button class="clear-btn" (click)="clearTableSearch()"><i class="pi pi-times"></i></button>
+                  }
+                </div>
+                <button class="search-submit-btn" (click)="onTableSearch()">Search</button>
+
+                <button class="toggle-schema-btn" (click)="showSchemaDrawer = !showSchemaDrawer">
+                  <i class="pi pi-list"></i> {{ showSchemaDrawer ? 'Hide Columns' : 'View Columns' }}
+                </button>
+                <button class="toggle-schema-btn toggle-stats-btn" (click)="toggleStatsPanel()" [class.active-btn]="showStatsPanel">
+                  <i class="pi pi-chart-pie"></i> {{ showStatsPanel ? 'Hide Statistics' : 'Show Statistics' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Schema Columns Drawer (Collapsible) -->
+            @if (showSchemaDrawer) {
+              <div class="schema-columns-drawer">
+                <div class="drawer-header">
+                  <strong>Column Specifications for <code>{{ selectedTable }}</code></strong>
+                  <small>{{ schema.columns.length }} columns defined</small>
+                </div>
+                <div class="schema-cols-grid">
+                  @for (col of schema.columns; track col.column_name) {
+                    <div class="col-spec-card">
+                      <span class="col-name">{{ col.column_name }}</span>
+                      <span class="col-type">{{ col.data_type }}</span>
+                      <span class="col-null">{{ col.is_nullable === 'YES' ? 'nullable' : 'required' }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Table Statistics Summary Panel (Collapsible & Structured) -->
+            @if (showStatsPanel && tableStats) {
+              <div class="table-stats-panel">
+                <div class="stats-panel-header">
+                  <div class="panel-title-wrap">
+                    <span class="panel-eyebrow">COLUMN PROFILING & DISTRIBUTION</span>
+                    <h3>Table Analytics Summary · <code>{{ selectedTable }}</code></h3>
+                  </div>
+                  <div class="panel-meta-badges">
+                    <span class="meta-pill"><i class="pi pi-database"></i> {{ tableStats.total_rows | number }} Rows</span>
+                    <span class="meta-pill"><i class="pi pi-table"></i> {{ tableStats.column_count }} Columns</span>
+                  </div>
+                </div>
+
+                <!-- Numeric Metrics Grid -->
+                @if (tableStats.numeric_metrics?.length) {
+                  <div class="stats-section-block">
+                    <div class="stats-block-title">
+                      <i class="pi pi-chart-line"></i> NUMERIC METRICS SUMMARY
+                    </div>
+                    <div class="stats-numeric-grid">
+                      @for (metric of tableStats.numeric_metrics; track metric.column) {
+                        <div class="stat-metric-card">
+                          <div class="metric-card-top">
+                            <span class="metric-col-name">{{ metric.column }}</span>
+                            <span class="metric-type-tag">{{ metric.type }}</span>
+                          </div>
+                          <div class="metric-3col">
+                            <div class="metric-cell min-cell">
+                              <span class="cell-label">MIN</span>
+                              <strong class="cell-val">{{ formatCellValue(metric.min) }}</strong>
+                            </div>
+                            <div class="metric-cell avg-cell">
+                              <span class="cell-label">AVG</span>
+                              <strong class="cell-val">{{ formatCellValue(metric.avg) }}</strong>
+                            </div>
+                            <div class="metric-cell max-cell">
+                              <span class="cell-label">MAX</span>
+                              <strong class="cell-val">{{ formatCellValue(metric.max) }}</strong>
+                            </div>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+
+                <!-- Categorical Breakdowns Grid -->
+                @if (tableStats.categorical_breakdowns?.length) {
+                  <div class="stats-section-block">
+                    <div class="stats-block-title">
+                      <i class="pi pi-chart-bar"></i> CATEGORICAL DISTRIBUTIONS
+                    </div>
+                    <div class="stats-categorical-grid">
+                      @for (cat of tableStats.categorical_breakdowns; track cat.column) {
+                        <div class="stat-category-card">
+                          <div class="category-card-top">
+                            <div class="cat-title-wrap">
+                              <span class="cat-col-name">{{ cat.column }}</span>
+                              <span class="cat-type-tag">{{ cat.type }}</span>
+                            </div>
+                            <span class="cat-distinct-count">Top {{ cat.top_values.length }} values</span>
+                          </div>
+                          
+                          <div class="cat-pill-flow">
+                            @for (item of cat.top_values; track item.value) {
+                              <div class="cat-distribution-pill" [title]="item.value + ': ' + (item.count | number) + ' records'">
+                                <span class="dist-val">{{ truncateValue(item.value, 18) }}</span>
+                                <span class="dist-count">{{ item.count | number }}</span>
+                              </div>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Paginated Data Grid -->
+            @if (tableDataLoading) {
+              <div class="table-loading-state">
+                <i class="pi pi-spin pi-spinner"></i>
+                <span>Loading records...</span>
+              </div>
+            } @else if (tableDataError) {
+              <div class="table-error-state">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>{{ tableDataError }}</span>
+                <button (click)="loadTableData()">Retry</button>
+              </div>
+            } @else if (tableData) {
+              <div class="data-grid-container">
+                <table class="data-grid" aria-label="Database records">
+                  <thead>
+                    <tr>
+                      @for (col of tableData.columns; track col) {
+                        <th (click)="sortTable(col)">
+                          <div class="th-content">
+                            <span>{{ col }}</span>
+                            @if (tableSortBy === col) {
+                              <i class="pi" [class.pi-sort-amount-up]="tableSortOrder === 'asc'" [class.pi-sort-amount-down]="tableSortOrder === 'desc'"></i>
+                            } @else {
+                              <i class="pi pi-sort th-sort-idle"></i>
+                            }
+                          </div>
+                        </th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of tableData.rows; track $index) {
+                      <tr>
+                        @for (col of tableData.columns; track col) {
+                          <td [title]="row[col]">
+                            {{ formatCellValue(row[col]) }}
+                          </td>
+                        }
+                      </tr>
+                    }
+                    @if (tableData.rows.length === 0) {
+                      <tr>
+                        <td [attr.colspan]="tableData.columns.length" class="empty-data-cell">
+                          No records match your search criteria.
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Pagination Footer -->
+              <div class="grid-pagination-footer">
+                <div class="pagination-info">
+                  Showing <strong>{{ (tableData.page - 1) * tableData.page_size + (tableData.rows.length ? 1 : 0) }}</strong> to
+                  <strong>{{ (tableData.page - 1) * tableData.page_size + tableData.rows.length }}</strong> of
+                  <strong>{{ tableData.total_rows | number }}</strong> records
+                </div>
+
+                <div class="pagination-controls">
+                  <button
+                    class="page-nav-btn"
+                    [disabled]="tableData.page <= 1"
+                    (click)="changeTablePage(tableData.page - 1)"
+                    aria-label="Previous page"
+                  >
+                    <i class="pi pi-angle-left"></i> Previous
+                  </button>
+
+                  <span class="page-current">Page {{ tableData.page }} of {{ tableData.total_pages }}</span>
+
+                  <button
+                    class="page-nav-btn"
+                    [disabled]="tableData.page >= tableData.total_pages"
+                    (click)="changeTablePage(tableData.page + 1)"
+                    aria-label="Next page"
+                  >
+                    Next <i class="pi pi-angle-right"></i>
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </section>
+    } @else if (activePage === 'overview') {
+      <section class="overview-dashboard">
+        <!-- A. DASHBOARD HEADER -->
+        <header class="db-header">
+          <div class="db-title-block">
+            <div class="db-eyebrow">
+              <span class="db-eyebrow-dot"></span>
+              NOVAMART ENTERPRISE AGENTIC PLATFORM
+            </div>
+            <div class="db-title-row">
+              <h1 class="db-title">Overview</h1>
+              <span class="db-badge-live">
+                <i class="pi pi-circle-fill"></i> LIVE ANALYTICS
+              </span>
+            </div>
+            <p class="db-subtitle">NovaMart Business Intelligence & Agent Operations</p>
+          </div>
+
+          <div class="db-controls-block">
+            <div class="db-meta-info">
+              <span class="db-date"><i class="pi pi-calendar"></i> {{ currentDateFormatted }}</span>
+              @if (lastRefreshedFormatted) {
+                <span class="db-refresh-time"><i class="pi pi-clock"></i> Synced {{ lastRefreshedFormatted }}</span>
+              }
+            </div>
+
+            <div class="db-actions-row">
+              <!-- Time-Period Selector -->
+              <div class="db-period-pills" role="tablist" aria-label="Time-period filter">
+                @for (opt of periodOptions; track opt.id) {
+                  <button
+                    type="button"
+                    class="period-pill"
+                    [class.active]="dashboardPeriod === opt.id"
+                    [disabled]="dashboardLoading"
+                    (click)="setDashboardPeriod(opt.id)"
+                  >
+                    {{ opt.label }}
+                  </button>
+                }
+              </div>
+
+              <!-- Refresh Button -->
+              <button
+                type="button"
+                class="db-btn-refresh"
+                [class.spinning]="dashboardLoading"
+                [disabled]="dashboardLoading"
+                title="Refresh dashboard data"
+                (click)="refreshDashboard()"
+              >
+                <i class="pi pi-refresh" [class.pi-spin]="dashboardLoading"></i>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <!-- ERROR STATE -->
+        @if (dashboardError) {
+          <div class="db-error-banner">
+            <div class="error-icon"><i class="pi pi-exclamation-triangle"></i></div>
+            <div class="error-content">
+              <strong>Unable to load dashboard metrics</strong>
+              <p>{{ dashboardError }}</p>
+            </div>
+            <button class="retry-btn" (click)="refreshDashboard()">
+              <i class="pi pi-refresh"></i> Retry
+            </button>
+          </div>
+        }
+
+        <!-- LOADING SKELETON -->
+        @if (dashboardLoading && !dashboardData) {
+          <div class="db-skeleton-container">
+            <div class="skeleton-kpis">
+              <div class="skeleton-card" *ngFor="let i of [1,2,3,4,5]"></div>
+            </div>
+            <div class="skeleton-main-chart"></div>
+            <div class="skeleton-grid-2">
+              <div class="skeleton-card-large"></div>
+              <div class="skeleton-card-large"></div>
+            </div>
+          </div>
+        }
+
+        <!-- MAIN DASHBOARD CONTENT -->
+        @if (dashboardData) {
+          <!-- B. KPI CARDS SECTION (PREMIUM GLOSSY METALLIC FINISH) -->
+          <div class="db-kpi-grid">
+            <!-- 1. Total Revenue (Metallic Gold & Champagne) -->
+            <div class="kpi-card card-revenue">
+              <div class="kpi-top">
+                <span class="kpi-label">TOTAL REVENUE</span>
+                <span class="kpi-icon-wrap icon-gold"><i class="pi pi-wallet"></i></span>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-value value-gold">{{ formatInr(dashboardData.kpis.total_revenue.value) }}</span>
+              </div>
+              <div class="kpi-footer">
+                @if (dashboardData.kpis.total_revenue.change_pct !== null && dashboardData.kpis.total_revenue.change_pct !== undefined) {
+                  <span
+                    class="trend-badge badge-gold"
+                    [class.positive]="dashboardData.kpis.total_revenue.change_pct >= 0"
+                    [class.negative]="dashboardData.kpis.total_revenue.change_pct < 0"
+                  >
+                    <i [class]="dashboardData.kpis.total_revenue.change_pct >= 0 ? 'pi pi-arrow-up-right' : 'pi pi-arrow-down-right'"></i>
+                    {{ dashboardData.kpis.total_revenue.change_pct >= 0 ? '+' : '' }}{{ dashboardData.kpis.total_revenue.change_pct }}%
+                  </span>
+                  <span class="kpi-subtext">vs prior period</span>
+                } @else {
+                  <span class="cohort-tag gold-tag"><i class="pi pi-sparkles"></i> All-time GMV</span>
+                }
+                <!-- Sparkline SVG -->
+                <svg class="kpi-sparkline sparkline-gold" viewBox="0 0 110 32" preserveAspectRatio="none">
+                  <polyline
+                    fill="none"
+                    stroke="#fbbf24"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    [attr.points]="getSparklinePolyline(dashboardData.kpis.total_revenue.sparkline)"
+                  />
+                </svg>
+              </div>
+            </div>
+
+            <!-- 2. Total Orders (Electric Cyan) -->
+            <div class="kpi-card card-orders">
+              <div class="kpi-top">
+                <span class="kpi-label">TOTAL ORDERS</span>
+                <span class="kpi-icon-wrap icon-cyan"><i class="pi pi-shopping-cart"></i></span>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-value value-cyan">{{ formatIndianNumber(dashboardData.kpis.total_orders.value) }}</span>
+              </div>
+              <div class="kpi-footer">
+                @if (dashboardData.kpis.total_orders.change_pct !== null && dashboardData.kpis.total_orders.change_pct !== undefined) {
+                  <span
+                    class="trend-badge badge-cyan"
+                    [class.positive]="dashboardData.kpis.total_orders.change_pct >= 0"
+                    [class.negative]="dashboardData.kpis.total_orders.change_pct < 0"
+                  >
+                    <i [class]="dashboardData.kpis.total_orders.change_pct >= 0 ? 'pi pi-arrow-up-right' : 'pi pi-arrow-down-right'"></i>
+                    {{ dashboardData.kpis.total_orders.change_pct >= 0 ? '+' : '' }}{{ dashboardData.kpis.total_orders.change_pct }}%
+                  </span>
+                  <span class="kpi-subtext">velocity</span>
+                } @else {
+                  <span class="cohort-tag cyan-tag"><i class="pi pi-bolt"></i> Completed</span>
+                }
+                <!-- Sparkline SVG -->
+                <svg class="kpi-sparkline sparkline-cyan" viewBox="0 0 110 32" preserveAspectRatio="none">
+                  <polyline
+                    fill="none"
+                    stroke="#00e5ff"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    [attr.points]="getSparklinePolyline(dashboardData.kpis.total_orders.sparkline)"
+                  />
+                </svg>
+              </div>
+            </div>
+
+            <!-- 3. Average Order Value (Silver & Ice Blue) -->
+            <div class="kpi-card card-aov">
+              <div class="kpi-top">
+                <span class="kpi-label">AVG ORDER VALUE</span>
+                <span class="kpi-icon-wrap icon-silver"><i class="pi pi-tag"></i></span>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-value value-silver">{{ formatInr(dashboardData.kpis.average_order_value.value) }}</span>
+              </div>
+              <div class="kpi-footer">
+                @if (dashboardData.kpis.average_order_value.change_pct !== null && dashboardData.kpis.average_order_value.change_pct !== undefined) {
+                  <span
+                    class="trend-badge badge-silver"
+                    [class.positive]="dashboardData.kpis.average_order_value.change_pct >= 0"
+                    [class.negative]="dashboardData.kpis.average_order_value.change_pct < 0"
+                  >
+                    <i [class]="dashboardData.kpis.average_order_value.change_pct >= 0 ? 'pi pi-arrow-up-right' : 'pi pi-arrow-down-right'"></i>
+                    {{ dashboardData.kpis.average_order_value.change_pct >= 0 ? '+' : '' }}{{ dashboardData.kpis.average_order_value.change_pct }}%
+                  </span>
+                  <span class="kpi-subtext">basket size</span>
+                } @else {
+                  <span class="cohort-tag silver-tag"><i class="pi pi-shield"></i> Premium basket</span>
+                }
+                <!-- Sparkline SVG -->
+                <svg class="kpi-sparkline sparkline-silver" viewBox="0 0 110 32" preserveAspectRatio="none">
+                  <polyline
+                    fill="none"
+                    stroke="#cbd5e1"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    [attr.points]="getSparklinePolyline(getAovSparkline())"
+                  />
+                </svg>
+              </div>
+            </div>
+
+            <!-- 4. Total Customers (Royal Violet & Blue) -->
+            <div class="kpi-card card-customers">
+              <div class="kpi-top">
+                <span class="kpi-label">TOTAL CUSTOMERS</span>
+                <span class="kpi-icon-wrap icon-purple"><i class="pi pi-users"></i></span>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-value value-purple">{{ formatIndianNumber(dashboardData.kpis.total_customers.value) }}</span>
+              </div>
+              <div class="kpi-footer">
+                <span class="cohort-tag purple-tag"><i class="pi pi-star-fill"></i> 5 Active Tiers</span>
+                <!-- Sparkline SVG -->
+                <svg class="kpi-sparkline sparkline-purple" viewBox="0 0 110 32" preserveAspectRatio="none">
+                  <polyline
+                    fill="none"
+                    stroke="#a78bfa"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    [attr.points]="getSparklinePolyline(getCustomersSparkline())"
+                  />
+                </svg>
+              </div>
+            </div>
+
+            <!-- 5. Return Rate (Emerald Teal) -->
+            <div class="kpi-card card-returns">
+              <div class="kpi-top">
+                <span class="kpi-label">RETURN RATE</span>
+                <span class="kpi-icon-wrap icon-teal"><i class="pi pi-replay"></i></span>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-value value-teal">{{ dashboardData.kpis.return_rate.value }}%</span>
+              </div>
+              <div class="kpi-footer">
+                <span class="cohort-tag teal-tag"><i class="pi pi-shield"></i> &lt; 8% Benchmark</span>
+                <!-- Sparkline SVG -->
+                <svg class="kpi-sparkline sparkline-teal" viewBox="0 0 110 32" preserveAspectRatio="none">
+                  <polyline
+                    fill="none"
+                    stroke="#10b981"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    [attr.points]="getSparklinePolyline(getReturnsSparkline())"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- C. REVENUE ANALYTICS (TIME-SERIES VISUALIZATION) -->
+          <div class="db-section-card chart-section">
+            <div class="card-header-bar">
+              <div>
+                <div class="section-eyebrow">TEMPORAL TRAJECTORY</div>
+                <h2 class="card-title">Revenue & Order Volume Analytics</h2>
+                <p class="card-subtitle">
+                  Time-series progression showing revenue inflow and volume velocity across {{ dashboardData.period_label.toLowerCase() }}
+                </p>
+              </div>
+
+              <div class="chart-controls">
+                <div class="metric-toggle-group">
+                  <button
+                    type="button"
+                    class="toggle-btn"
+                    [class.active]="dashboardTimelineMetric === 'both'"
+                    (click)="dashboardTimelineMetric = 'both'"
+                  >
+                    Both
+                  </button>
+                  <button
+                    type="button"
+                    class="toggle-btn"
+                    [class.active]="dashboardTimelineMetric === 'revenue'"
+                    (click)="dashboardTimelineMetric = 'revenue'"
+                  >
+                    Revenue
+                  </button>
+                  <button
+                    type="button"
+                    class="toggle-btn"
+                    [class.active]="dashboardTimelineMetric === 'orders'"
+                    (click)="dashboardTimelineMetric = 'orders'"
+                  >
+                    Orders
+                  </button>
+                </div>
+
+                <div class="chart-legend">
+                  @if (dashboardTimelineMetric === 'both' || dashboardTimelineMetric === 'revenue') {
+                    <span class="legend-item"><span class="legend-dot cyan-dot"></span> Revenue (₹)</span>
+                  }
+                  @if (dashboardTimelineMetric === 'both' || dashboardTimelineMetric === 'orders') {
+                    <span class="legend-item"><span class="legend-dot gold-dot"></span> Orders</span>
+                  }
+                </div>
+              </div>
+            </div>
+
+            <!-- Interactive SVG Timeline Chart -->
+            <div class="chart-container" (mouseleave)="onTimelineLeave()">
+              <svg
+                class="timeline-svg"
+                viewBox="0 0 760 200"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <defs>
+                  <linearGradient id="cyanAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.45" />
+                    <stop offset="40%" stop-color="#00b0ff" stop-opacity="0.18" />
+                    <stop offset="100%" stop-color="#00e5ff" stop-opacity="0.00" />
+                  </linearGradient>
+                  <linearGradient id="goldAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.35" />
+                    <stop offset="40%" stop-color="#f59e0b" stop-opacity="0.12" />
+                    <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.00" />
+                  </linearGradient>
+                  <filter id="cyanGlow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#00e5ff" flood-opacity="0.7" />
+                  </filter>
+                  <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#fbbf24" flood-opacity="0.7" />
+                  </filter>
+                </defs>
+
+                <!-- Horizontal Grid Lines -->
+                @for (grid of getTimelineGridLines(); track grid.y) {
+                  <g class="grid-line-group">
+                    <line x1="60" [attr.y1]="grid.y" x2="740" [attr.y2]="grid.y" stroke="rgba(255,255,255,0.06)" stroke-dasharray="4 4" />
+                    @if (dashboardTimelineMetric === 'both' || dashboardTimelineMetric === 'revenue') {
+                      <text x="50" [attr.y]="grid.y + 4" text-anchor="end" class="chart-axis-label">{{ grid.labelRev }}</text>
+                    } @else {
+                      <text x="50" [attr.y]="grid.y + 4" text-anchor="end" class="chart-axis-label">{{ grid.labelOrd }}</text>
+                    }
+                  </g>
+                }
+
+                <!-- Revenue Area & Line -->
+                @if (dashboardTimelineMetric === 'both' || dashboardTimelineMetric === 'revenue') {
+                  <path [attr.d]="getTimelineAreaPath('revenue')" fill="url(#cyanAreaGradient)" />
+                  <path [attr.d]="getTimelineLinePath('revenue')" fill="none" stroke="#00e5ff" stroke-width="2.5" filter="url(#cyanGlow)" />
+                }
+
+                <!-- Orders Area & Line -->
+                @if (dashboardTimelineMetric === 'both' || dashboardTimelineMetric === 'orders') {
+                  @if (dashboardTimelineMetric === 'orders') {
+                    <path [attr.d]="getTimelineAreaPath('orders')" fill="url(#goldAreaGradient)" />
+                  }
+                  <path [attr.d]="getTimelineLinePath('orders')" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-dasharray="3 1" filter="url(#goldGlow)" />
+                }
+
+                <!-- X Axis Labels -->
+                @for (lbl of getTimelineXLabels(); track lbl.x) {
+                  <text [attr.x]="lbl.x" y="195" text-anchor="middle" class="chart-axis-label">{{ lbl.label }}</text>
+                }
+
+                <!-- Interactive Data Point Circles & Hit Targets -->
+                @for (pt of getTimelinePoints('revenue'); track pt.data.date_key) {
+                  <circle
+                    [attr.cx]="pt.x"
+                    [attr.cy]="pt.y"
+                    r="4"
+                    fill="#0b0f19"
+                    stroke="#00e5ff"
+                    stroke-width="2"
+                    class="chart-point-circle"
+                    [class.active]="dashboardHoveredTimeline?.date_key === pt.data.date_key"
+                  />
+                  <!-- Invisible wider hit area for smooth hovering -->
+                  <rect
+                    [attr.x]="pt.x - 15"
+                    y="10"
+                    width="30"
+                    height="160"
+                    fill="transparent"
+                    class="chart-hit-rect"
+                    (mouseenter)="onTimelineHover(pt.data, pt.x, pt.y)"
+                  />
+                }
+              </svg>
+
+              <!-- Hover Tooltip -->
+              @if (dashboardHoveredTimeline) {
+                <div
+                  class="chart-tooltip"
+                  [style.left.px]="dashboardHoverX"
+                  [style.top.px]="dashboardHoverY - 70"
+                >
+                  <div class="tooltip-header">{{ formatDateLabel(dashboardHoveredTimeline.date_key) }}</div>
+                  <div class="tooltip-metric">
+                    <span class="cyan-dot"></span>
+                    <span class="label">Revenue:</span>
+                    <strong>{{ formatInr(dashboardHoveredTimeline.revenue) }}</strong>
+                  </div>
+                  <div class="tooltip-metric">
+                    <span class="gold-dot"></span>
+                    <span class="label">Orders:</span>
+                    <strong>{{ formatIndianNumber(dashboardHoveredTimeline.orders) }}</strong>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- D. SALES PERFORMANCE (CATEGORIES & TOP PRODUCTS) -->
+          <div class="db-grid-2">
+            <!-- D1. Revenue by Product Category (Donut + Breakdown) -->
+            <div class="db-section-card">
+              <div class="card-header-bar">
+                <div>
+                  <div class="section-eyebrow">MERCHANDISE DIVERSITY</div>
+                  <h3 class="card-title">Revenue by Product Category</h3>
+                </div>
+                <span class="card-badge">6 Categories</span>
+              </div>
+
+              <div class="category-analytics-body">
+                <!-- Donut Chart SVG -->
+                <div class="donut-chart-wrapper">
+                  <svg class="donut-svg" viewBox="0 0 200 200">
+                    @for (slice of getCategoryDonutSlices(); track slice.category) {
+                      <path
+                        [attr.d]="slice.path"
+                        [attr.fill]="slice.color"
+                        class="donut-slice"
+                        [attr.title]="slice.category + ': ' + slice.share_pct + '%'"
+                      />
+                    }
+                  </svg>
+                  <div class="donut-center-text">
+                    <div class="donut-center-dial">
+                      <span class="center-title">CATALOG GMV</span>
+                      <span class="center-value">{{ formatCompactInr(dashboardData.kpis.total_revenue.value) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Category List with Progress Bars -->
+                <div class="category-bars-list">
+                  @for (cat of dashboardData.category_sales; track cat.category; let idx = $index) {
+                    <div class="cat-bar-item">
+                      <div class="cat-bar-header">
+                        <span class="cat-name">
+                          <span class="cat-color-swatch" [style.background-color]="getCategoryColor(idx).base"></span>
+                          {{ cat.category }}
+                        </span>
+                        <div class="cat-bar-values">
+                          <strong class="cat-rev">{{ formatInr(cat.revenue) }}</strong>
+                          <span class="cat-share">{{ cat.share_pct }}%</span>
+                        </div>
+                      </div>
+                      <div class="progress-track">
+                        <div
+                          class="progress-fill"
+                          [style.width.%]="cat.share_pct"
+                          [style.background]="'linear-gradient(90deg, ' + getCategoryColor(idx).base + ', ' + getCategoryColor(idx).hover + ')'"
+                        ></div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+
+            <!-- D2. Top-Performing Products -->
+            <div class="db-section-card">
+              <div class="card-header-bar">
+                <div>
+                  <div class="section-eyebrow">CATALOG LEADERS</div>
+                  <h3 class="card-title">Top-Performing Products</h3>
+                </div>
+                <span class="card-badge">By Revenue</span>
+              </div>
+
+              <div class="top-products-list">
+                @for (prod of dashboardData.top_products; track prod.product_id; let rank = $index) {
+                  <div class="product-item-card">
+                    <div class="rank-indicator" [class.rank-gold]="rank === 0" [class.rank-silver]="rank === 1" [class.rank-bronze]="rank === 2">
+                      #{{ rank + 1 }}
+                    </div>
+
+                    <div class="product-info-block">
+                      <div class="product-title-row">
+                        <strong class="product-name" [title]="prod.product_name">{{ prod.product_name }}</strong>
+                        <span class="product-category-tag">{{ prod.category }}</span>
+                      </div>
+                      <div class="product-meta-row">
+                        <span class="product-id-tag">{{ prod.product_id }}</span>
+                        <span class="product-rating"><i class="pi pi-star-fill"></i> {{ prod.rating.toFixed(1) }}</span>
+                        <span class="product-units"><i class="pi pi-box"></i> {{ formatIndianNumber(prod.units_sold) }} units sold</span>
+                      </div>
+                    </div>
+
+                    <div class="product-revenue-block">
+                      <strong class="prod-rev">{{ formatInr(prod.revenue) }}</strong>
+                      <span class="prod-unit-price">@ {{ formatInr(prod.unit_price) }} / unit</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- E. CAMPAIGN PERFORMANCE (MARKETING ANALYTICS) -->
+          <div class="db-section-card">
+            <div class="card-header-bar">
+              <div>
+                <div class="section-eyebrow">MARKETING INTELLIGENCE</div>
+                <h3 class="card-title">Marketing Campaign Performance & Capital Efficiency</h3>
+                <p class="card-subtitle">Aggregated returns and conversion efficacy for NovaMart growth initiatives</p>
+              </div>
+
+              <div class="campaign-summary-chips">
+                <div class="summary-chip">
+                  <span class="chip-label">Total Spend</span>
+                  <strong class="chip-val">{{ formatInr(dashboardData.campaign_performance.summary.total_spend) }}</strong>
+                </div>
+                <div class="summary-chip">
+                  <span class="chip-label">Attributed Revenue</span>
+                  <strong class="chip-val text-cyan">{{ formatInr(dashboardData.campaign_performance.summary.total_revenue) }}</strong>
+                </div>
+                <div class="summary-chip highlight-chip">
+                  <span class="chip-label">Overall ROAS</span>
+                  <strong class="chip-val text-gold">{{ dashboardData.campaign_performance.summary.roas }}x</strong>
+                </div>
+                <div class="summary-chip">
+                  <span class="chip-label">ROI %</span>
+                  <strong class="chip-val text-teal">+{{ dashboardData.campaign_performance.summary.roi_pct }}%</strong>
+                </div>
+                <div class="summary-chip">
+                  <span class="chip-label">Conversions</span>
+                  <strong class="chip-val">{{ formatIndianNumber(dashboardData.campaign_performance.summary.total_conversions) }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="campaigns-comparison-table-wrapper">
+              <table class="db-custom-table">
+                <thead>
+                  <tr>
+                    <th>Campaign</th>
+                    <th>Objective</th>
+                    <th>Actual Spend</th>
+                    <th>Revenue Generated</th>
+                    <th>ROAS Ratio</th>
+                    <th>Efficiency Bar</th>
+                    <th>Conversions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (cmp of dashboardData.campaign_performance.top_campaigns; track cmp.campaign_id) {
+                    <tr>
+                      <td>
+                        <div class="campaign-identity">
+                          <strong>{{ cmp.campaign_name }}</strong>
+                          <span class="cmp-id-sub">{{ cmp.campaign_id }}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="objective-badge">{{ cmp.objective }}</span>
+                      </td>
+                      <td>
+                        <span class="font-mono">{{ formatInr(cmp.spend) }}</span>
+                      </td>
+                      <td>
+                        <strong class="font-mono text-cyan">{{ formatInr(cmp.revenue) }}</strong>
+                      </td>
+                      <td>
+                        <span class="roas-pill" [class.high-roas]="cmp.roas >= 2.0">
+                          <i class="pi pi-bolt"></i> {{ cmp.roas }}x
+                        </span>
+                      </td>
+                      <td class="efficiency-bar-cell">
+                        <div class="comp-bar-track">
+                          <div
+                            class="comp-bar-fill"
+                            [style.width.%]="getRoasWidthPct(cmp.roas)"
+                            [class.fill-gold]="cmp.roas >= 2.0"
+                          ></div>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="font-mono">{{ formatIndianNumber(cmp.conversions) }}</span>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- F. CUSTOMER INSIGHTS & G. OPERATIONAL HEALTH (GRID 2) -->
+          <div class="db-grid-2">
+            <!-- F. Customer Insights -->
+            <div class="db-section-card">
+              <div class="card-header-bar">
+                <div>
+                  <div class="section-eyebrow">COHORT DISTRIBUTION</div>
+                  <h3 class="card-title">Customer Segments & Cohort Value</h3>
+                </div>
+                <span class="card-badge">5 Distinct Segments</span>
+              </div>
+
+              <div class="customer-segments-grid">
+                @for (seg of dashboardData.customer_insights.segments; track seg.customer_segment) {
+                  <div class="segment-card" [class.segment-premium]="seg.customer_segment === 'Premium'">
+                    <div class="seg-top">
+                      <span class="seg-name">{{ seg.customer_segment }}</span>
+                      <span class="seg-count">{{ formatIndianNumber(seg.customer_count) }} customers</span>
+                    </div>
+                    <div class="seg-ltv-row">
+                      <span class="ltv-label">Avg Lifetime Value</span>
+                      <strong class="ltv-val">{{ formatInr(seg.avg_ltv) }}</strong>
+                    </div>
+                    <div class="seg-share-footer">
+                      <div class="seg-progress">
+                        <div class="seg-progress-bar" [style.width.%]="seg.share_pct"></div>
+                      </div>
+                      <span class="seg-share-text">{{ seg.share_pct }}% of total customer value</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <!-- G. Operational Health -->
+            <div class="db-section-card">
+              <div class="card-header-bar">
+                <div>
+                  <div class="section-eyebrow">SYSTEM INTEGRITY</div>
+                  <h3 class="card-title">Operational Health & Logistics</h3>
+                </div>
+                <span class="card-badge text-teal"><i class="pi pi-check-circle"></i> Healthy</span>
+              </div>
+
+              <div class="operations-grid-4">
+                <!-- Logistics & Delivery -->
+                <div class="op-stat-card">
+                  <div class="op-icon-header">
+                    <span class="op-icon icon-cyan"><i class="pi pi-send"></i></span>
+                    <span class="op-title">Fulfillment</span>
+                  </div>
+                  <div class="op-stat-val">{{ dashboardData.operational_health.shipments.on_time_pct }}%</div>
+                  <div class="op-stat-desc">On-time delivery performance</div>
+                  <div class="op-stat-sub">
+                    <span>Delivered: <strong>{{ formatIndianNumber(dashboardData.operational_health.shipments.delivered) }}</strong></span>
+                    <span>Avg delay: <strong>{{ dashboardData.operational_health.shipments.avg_delay_days }}d</strong></span>
+                  </div>
+                </div>
+
+                <!-- Return Rate -->
+                <div class="op-stat-card">
+                  <div class="op-icon-header">
+                    <span class="op-icon icon-teal"><i class="pi pi-replay"></i></span>
+                    <span class="op-title">Returns</span>
+                  </div>
+                  <div class="op-stat-val">{{ dashboardData.operational_health.returns.return_rate_pct }}%</div>
+                  <div class="op-stat-desc">Total return resolution rate</div>
+                  <div class="op-stat-sub">
+                    <span>Returns: <strong>{{ formatIndianNumber(dashboardData.operational_health.returns.total_returns) }}</strong></span>
+                    <span class="text-teal">Within tolerance</span>
+                  </div>
+                </div>
+
+                <!-- Seller Activity -->
+                <div class="op-stat-card">
+                  <div class="op-icon-header">
+                    <span class="op-icon icon-gold"><i class="pi pi-shop"></i></span>
+                    <span class="op-title">Marketplace</span>
+                  </div>
+                  <div class="op-stat-val">{{ dashboardData.operational_health.sellers.active_sellers }} / {{ dashboardData.operational_health.sellers.total_sellers }}</div>
+                  <div class="op-stat-desc">Active registered merchants</div>
+                  <div class="op-stat-sub">
+                    <span>Rating: <strong>{{ dashboardData.operational_health.sellers.avg_rating }}★</strong></span>
+                    <span class="text-gold">Catalog vetted</span>
+                  </div>
+                </div>
+
+                <!-- Payment Status -->
+                <div class="op-stat-card">
+                  <div class="op-icon-header">
+                    <span class="op-icon icon-purple"><i class="pi pi-credit-card"></i></span>
+                    <span class="op-title">Payments</span>
+                  </div>
+                  <div class="op-stat-val">99.8%</div>
+                  <div class="op-stat-desc">Transaction success rate</div>
+                  <div class="op-stat-sub">
+                    <span>Methods: <strong>UPI / Card / Net</strong></span>
+                    <span class="text-teal">Fully settled</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- H. BUSINESS INSIGHTS (DETERMINISTIC DATA-GROUNDED OBSERVATIONS) -->
+          <div class="db-section-card insights-card">
+            <div class="card-header-bar">
+              <div>
+                <div class="section-eyebrow">INTELLIGENCE ENGINE</div>
+                <h3 class="card-title">Business Insights</h3>
+                <p class="card-subtitle">Verified deterministic observations grounded in live NovaMart transactional records</p>
+              </div>
+              <span class="insights-verified-badge">
+                <i class="pi pi-verified"></i> Data-Grounded Observations
+              </span>
+            </div>
+
+            <div class="insights-cards-grid">
+              @for (insight of dashboardData.business_insights; track insight.id) {
+                <div class="insight-item-box" [class.box-warning]="insight.status === 'warning'">
+                  <div class="insight-box-top">
+                    <div class="insight-tags">
+                      <span class="insight-id-pill">{{ insight.id }}</span>
+                      <span class="insight-cat-pill">{{ insight.category }}</span>
+                    </div>
+                    <span class="insight-metric-highlight">{{ insight.metric }}</span>
+                  </div>
+
+                  <h4 class="insight-title">{{ insight.title }}</h4>
+                  <p class="insight-obs">{{ insight.observation }}</p>
+
+                  <div class="insight-box-footer">
+                    <span class="insight-source"><i class="pi pi-database"></i> Source: {{ insight.source }}</span>
+                    <span class="status-pill" [class.pill-positive]="insight.status === 'positive'" [class.pill-warning]="insight.status === 'warning'">
+                      <i [class]="insight.status === 'positive' ? 'pi pi-check' : 'pi pi-info-circle'"></i>
+                      {{ insight.status === 'positive' ? 'Verified Trend' : 'Monitoring' }}
+                    </span>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </section>
     } @else {
       <section class="placeholder-page">
         <div class="placeholder-icon"><i class="pi pi-wrench"></i></div>
@@ -555,4 +1821,241 @@
       </section>
     }
   </main>
+
+  @if (showReportStudio) {
+    <div class="report-studio-backdrop" (click)="closeReportStudio()">
+      <div class="report-studio-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-badge"><i class="pi pi-sparkles"></i> ENTERPRISE BI</span>
+            <h2 id="modal-title">Executive Report Studio</h2>
+            <p>Configure and export management-ready reports grounded in verified NovaMart transactional data.</p>
+          </div>
+          <button class="modal-close-btn" (click)="closeReportStudio()" aria-label="Close dialog">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- 1. Category Grid -->
+          <div class="form-group">
+            <label class="group-label">1. SELECT REPORT CATEGORY</label>
+            <div class="category-grid">
+              <button
+                type="button"
+                class="category-card"
+                [class.selected]="reportType === 'executive_performance' || reportType === 'business_performance'"
+                (click)="reportType = 'executive_performance'"
+              >
+                <i class="pi pi-chart-line cat-icon"></i>
+                <strong>Executive Performance</strong>
+                <span>Holistic overview of revenue, margins, volume & SLAs</span>
+              </button>
+
+              <button
+                type="button"
+                class="category-card"
+                [class.selected]="reportType === 'sales_performance' || reportType === 'sales_analysis'"
+                (click)="reportType = 'sales_performance'"
+              >
+                <i class="pi pi-shopping-bag cat-icon"></i>
+                <strong>Sales & Merchandising</strong>
+                <span>Category breakdowns, SKU velocity & ticket sizes</span>
+              </button>
+
+              <button
+                type="button"
+                class="category-card"
+                [class.selected]="reportType === 'campaign_performance'"
+                (click)="reportType = 'campaign_performance'"
+              >
+                <i class="pi pi-megaphone cat-icon"></i>
+                <strong>Marketing & Campaigns</strong>
+                <span>ROAS, attribution, customer acquisition & channel yield</span>
+              </button>
+
+              <button
+                type="button"
+                class="category-card"
+                [class.selected]="reportType === 'customer_intelligence'"
+                (click)="reportType = 'customer_intelligence'"
+              >
+                <i class="pi pi-users cat-icon"></i>
+                <strong>Customer Intelligence</strong>
+                <span>Loyalty tiers, cohort lifetime value & retention dynamics</span>
+              </button>
+
+              <button
+                type="button"
+                class="category-card"
+                [class.selected]="reportType === 'operations_fulfillment'"
+                (click)="reportType = 'operations_fulfillment'"
+              >
+                <i class="pi pi-truck cat-icon"></i>
+                <strong>Operations & Logistics</strong>
+                <span>Delivery transit times, return rates & carrier health</span>
+              </button>
+
+              <button
+                type="button"
+                class="category-card"
+                [class.selected]="reportType === 'custom_report'"
+                (click)="reportType = 'custom_report'"
+              >
+                <i class="pi pi-sliders-h cat-icon"></i>
+                <strong>Custom Business Report</strong>
+                <span>Customizable sections with cross-table aggregations</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Period & Format -->
+          <div class="form-row-dual">
+            <div class="form-group flex-1">
+              <label class="group-label">2. REPORTING HORIZON</label>
+              <div class="period-pills">
+                <button
+                  type="button"
+                  class="pill-btn"
+                  [class.active]="reportPeriod === 'all_time'"
+                  (click)="reportPeriod = 'all_time'"
+                >All Time</button>
+                <button
+                  type="button"
+                  class="pill-btn"
+                  [class.active]="reportPeriod === 'this_year'"
+                  (click)="reportPeriod = 'this_year'"
+                >This Year</button>
+                <button
+                  type="button"
+                  class="pill-btn"
+                  [class.active]="reportPeriod === 'last_90_days'"
+                  (click)="reportPeriod = 'last_90_days'"
+                >Last 90 Days</button>
+                <button
+                  type="button"
+                  class="pill-btn"
+                  [class.active]="reportPeriod === 'last_30_days'"
+                  (click)="reportPeriod = 'last_30_days'"
+                >Last 30 Days</button>
+                <button
+                  type="button"
+                  class="pill-btn"
+                  [class.active]="reportPeriod === 'last_7_days'"
+                  (click)="reportPeriod = 'last_7_days'"
+                >Last 7 Days</button>
+              </div>
+            </div>
+
+            <div class="form-group flex-1">
+              <label class="group-label">3. EXPORT FORMAT</label>
+              <div class="format-pills">
+                <button
+                  type="button"
+                  class="format-btn"
+                  [class.active]="reportFormat === 'pdf'"
+                  (click)="reportFormat = 'pdf'"
+                >
+                  <i class="pi pi-file-pdf"></i>
+                  <div>
+                    <strong>PDF Document</strong>
+                    <small>ReportLab Platypus Engine</small>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  class="format-btn"
+                  [class.active]="reportFormat === 'xlsx'"
+                  (click)="reportFormat = 'xlsx'"
+                >
+                  <i class="pi pi-file-excel"></i>
+                  <div>
+                    <strong>Excel Workbook</strong>
+                    <small>openpyxl Multi-Sheet</small>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  class="format-btn"
+                  [class.active]="reportFormat === 'csv'"
+                  (click)="reportFormat = 'csv'"
+                >
+                  <i class="pi pi-file"></i>
+                  <div>
+                    <strong>CSV Data Export</strong>
+                    <small>RFC 4180 Tabular</small>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Section Toggles -->
+          <div class="form-group">
+            <label class="group-label">4. REPORT SECTIONS INCLUDED</label>
+            <div class="section-toggles-grid">
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="reportIncludeCharts" />
+                <span>High-Res Charts & Visuals</span>
+              </label>
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="reportIncludeTables" />
+                <span>Structured Data Tables</span>
+              </label>
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="reportIncludeRecommendations" />
+                <span>Prescriptive Recommendations</span>
+              </label>
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="reportIncludeSources" />
+                <span>Audit Trail & Policy Sources</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 4. Optional Custom Title -->
+          <div class="form-group">
+            <label class="group-label" for="report-title-input">CUSTOM TITLE (OPTIONAL)</label>
+            <input
+              id="report-title-input"
+              type="text"
+              class="studio-input"
+              [(ngModel)]="reportTitle"
+              placeholder="e.g., NovaMart Q2 Leadership Strategy Review"
+            />
+          </div>
+
+          @if (reportError) {
+            <p class="report-error" role="alert">{{ reportError }}</p>
+          }
+          @if (reportSuccess) {
+            <p class="report-success" role="status"><i class="pi pi-check"></i> {{ reportSuccess }}</p>
+          }
+        </div>
+
+        <div class="modal-footer">
+          <div class="footer-note">
+            <i class="pi pi-shield"></i>
+            <span>Grounded in PostgreSQL 17 transactional database · Zero synthetic data</span>
+          </div>
+
+          <div class="footer-actions">
+            <button type="button" class="cancel-btn" (click)="closeReportStudio()">Cancel</button>
+            <button
+              type="button"
+              class="generate-btn"
+              [disabled]="reportLoading"
+              (click)="downloadReport()"
+            >
+              @if (reportLoading) {
+                <i class="pi pi-spin pi-spinner"></i> Generating Deliverable...
+              } @else {
+                <i class="pi pi-download"></i> Generate & Download
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
 </div>

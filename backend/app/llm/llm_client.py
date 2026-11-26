@@ -1,7 +1,10 @@
+import logging
 import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
@@ -20,7 +23,7 @@ class LLMClient:
 
     def __init__(
         self,
-        model: str = "gpt-5.6-luna",
+        model: str | None = None,
     ):
         # Load variables from .env
         load_dotenv()
@@ -37,7 +40,7 @@ class LLMClient:
             api_key=api_key
         )
 
-        self.model = model
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     def generate_answer(
         self,
@@ -55,9 +58,8 @@ class LLMClient:
 
         if not evidence:
             return (
-                "I could not find enough relevant "
-                "information in the available documents "
-                "to answer this question."
+                "I could not find enough substantive evidence "
+                "to answer this question from the available documents."
             )
 
         evidence_text = self._format_evidence(
@@ -65,23 +67,18 @@ class LLMClient:
         )
 
         instructions = """
-You are the answer-generation component of an
-enterprise RAG system.
+You are the answer-generation component of an enterprise RAG system.
 
-Answer the user's question using ONLY the evidence
-provided below.
+Answer the user's question using ONLY the evidence provided below.
 
 Rules:
-1. Do not invent facts.
+1. Do not invent facts or extrapolate beyond the provided text.
 2. Do not use outside knowledge.
-3. If the evidence does not contain enough information,
-   clearly say that the available evidence is insufficient.
+3. If the evidence does not directly contain enough information to answer the question, clearly state: "I could not find enough substantive evidence to answer this question from the available documents."
 4. Keep the answer concise and factual.
-5. Preserve important numbers exactly as provided.
-6. When multiple pieces of evidence are relevant,
-   combine them carefully.
-7. Do not mention internal implementation details,
-   embeddings, vector databases, or retrieval scores.
+5. Preserve important numbers, product codes, and policy windows exactly as provided.
+6. When multiple pieces of evidence are relevant, combine them carefully.
+7. Do not mention internal implementation details, embeddings, vector databases, or retrieval scores.
 """
 
         user_input = f"""
@@ -94,13 +91,33 @@ Retrieved Evidence:
 Based only on the retrieved evidence, answer the question.
 """
 
-        response = self.client.responses.create(
-            model=self.model,
-            instructions=instructions,
-            input=user_input,
-        )
+        try:
+            # Standard chat completions API compatible with modern OpenAI SDK
+            if hasattr(self.client, "chat") and hasattr(self.client.chat, "completions"):
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": instructions},
+                        {"role": "user", "content": user_input},
+                    ],
+                    temperature=0.0,
+                )
+                if response.choices and response.choices[0].message.content:
+                    return response.choices[0].message.content.strip()
 
-        return response.output_text.strip()
+            # Fallback for preview/responses API
+            if hasattr(self.client, "responses"):
+                response = self.client.responses.create(
+                    model=self.model,
+                    instructions=instructions,
+                    input=user_input,
+                )
+                return response.output_text.strip()
+        except Exception as exc:
+            logger.warning("OpenAI API call failed: %s", exc)
+            raise
+
+        return ""
 
     @staticmethod
     def _format_evidence(

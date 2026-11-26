@@ -7,7 +7,7 @@ class AnswerComposer:
     """Compose readable answers from SQL and RAG evidence."""
 
     MAX_DOCUMENTS = 2
-    MAX_CHUNKS_PER_DOCUMENT = 3
+    MAX_CHUNKS_PER_DOCUMENT = 6
     MAX_CONTENT_CHARS = 6000
 
     METADATA_FIELDS = {
@@ -72,7 +72,18 @@ class AnswerComposer:
         "the", "this", "to", "what", "when", "where", "which", "who",
         "why", "results", "will", "with", "would", "you",
         "customer", "customers", "recorded", "number", "count",
-        "happens", "take", "takes",
+        "happens", "take", "takes", "listed", "state", "stated", "states",
+        "provide", "provided", "under", "below",
+        "specify", "specifies", "specified", "outline", "outlines", "outlined",
+        "summarize", "summarise", "summary", "summarized", "summarised",
+        "mention", "mentions", "mentioned", "cover", "covers", "covered",
+        "discuss", "discusses", "discussed", "contain", "contains", "contained",
+        "relevant", "define", "defines", "defined", "definition", "action", "actions",
+        "company", "business", "process", "procedure", "actual",
+        "current", "price", "pricing", "cost",
+        "happen", "happened", "handling", "identify", "identifies", "identified",
+        "step", "steps", "workflow", "criteria",
+        "documented", "documentation", "compare", "comparing", "comparison", "campaigns",
     }
 
     RAG_TERM_EQUIVALENTS = {
@@ -84,7 +95,8 @@ class AnswerComposer:
         "send": {"return", "returned"},
         "sent": {"return", "returned"},
         "back": {"return", "returned"},
-        "delayed": {"delay", "delays", "late"},
+        "delay": {"delay", "delays", "delayed", "late"},
+        "delayed": {"delay", "delays", "delayed", "late", "positive"},
         "delivery": {"delivery", "delivered", "shipment", "dispatch"},
         "service": {"support", "service"},
         "defective": {"damaged", "quality", "defect"},
@@ -95,6 +107,18 @@ class AnswerComposer:
         "strategy": {"strategy", "recommend", "recommended", "recommendation"},
         "recommended": {"recommended", "recommend", "recommendation", "strategy"},
         "recommendation": {"recommendation", "recommended", "recommend", "strategy"},
+        "duration": {"months", "month", "years", "year", "days", "period", "warranty", "duration"},
+        "period": {"months", "month", "years", "year", "days", "period", "warranty", "duration"},
+        "factors": {"strategy", "recommend", "recommended", "recommendation", "retention", "experiences", "factor", "factors"},
+        "recommend": {"recommend", "recommended", "recommendation", "recommendations", "strategy", "receive", "retention"},
+        "escalate": {"escalate", "escalated", "escalation", "exceptions", "exception"},
+        "escalated": {"escalate", "escalated", "escalation", "exceptions", "exception"},
+        "materially": {"materially", "delayed", "delay", "high", "impact"},
+        "criteria": {"criteria", "rule", "decision", "profile", "lifetime", "value", "strategy", "priority", "retention", "segment", "segments"},
+        "workflow": {"workflow", "step", "steps", "sop", "procedure", "process", "onboarding"},
+        "steps": {"step", "steps", "workflow", "sop", "procedure", "process", "onboarding"},
+        "documented": {"document", "documents", "documentation", "documented", "postmortem", "strategy", "policy", "sop", "guide"},
+        "compare": {"compare", "comparison", "comparing", "difference", "differences", "versus", "vs"},
     }
 
     def compose(self, orchestration_result: dict[str, Any]) -> str:
@@ -357,6 +381,12 @@ class AnswerComposer:
                 "",
                 "**Supporting Document Evidence**",
                 "I could not retrieve evidence for: " + ", ".join(missing_facets) + ".",
+            ])
+        elif rows:
+            lines.extend([
+                "",
+                "**Supporting Document Evidence**",
+                "I could not find enough substantive evidence to answer the document-related portion of this question from the available documents.",
             ])
 
         if not lines:
@@ -699,6 +729,7 @@ class AnswerComposer:
             if not cls._is_substantive_content(content):
                 continue
 
+            doc_id = str(item.get("document_id") or "")
             title = str(item.get("title") or "")
             filename = str(item.get("filename") or "")
             related_entity_ids = " ".join(
@@ -706,7 +737,7 @@ class AnswerComposer:
                 for entity_id in item.get("related_entity_ids", [])
             )
             searchable = (
-                f"{title} {filename} {content} {related_entity_ids}"
+                f"{doc_id} {title} {filename} {content} {related_entity_ids}"
             ).lower()
 
             if requested_entities and not any(
@@ -755,6 +786,11 @@ class AnswerComposer:
             # Evidence that names the requested entity only alongside other
             # entities of the same kind (e.g. a multi-campaign report) is
             # general context, not evidence specific to the requested ID.
+            has_target = (
+                any(cls._contains_entity(f"{doc_id} {title} {filename} {content}", entity) for entity in requested_entities)
+                if requested_entities else False
+            )
+            candidate["_has_target"] = has_target
             candidate["_general_context"] = bool(
                 requested_entities
                 and cls._entity_focus_penalty(content, requested_entities)
@@ -763,9 +799,16 @@ class AnswerComposer:
 
             candidates.append(candidate)
 
-        # Prefer entity-specific evidence. General multi-entity context is
-        # only kept (and labelled as such) when nothing more specific exists.
-        if any(not item["_general_context"] for item in candidates):
+        # Prefer entity-specific evidence. Only drop general context if we have
+        # a candidate that specifically focuses on the requested entity alone
+        # (has_target is True and not _general_context). Do not drop candidates
+        # that contain the requested entity just because background documents
+        # with no entities at all are present.
+        has_sole_target = any(
+            item.get("_has_target") and not item["_general_context"]
+            for item in candidates
+        )
+        if has_sole_target:
             candidates = [
                 item for item in candidates if not item["_general_context"]
             ]
@@ -872,6 +915,9 @@ class AnswerComposer:
     ) -> bool:
         """Require concrete question terms to appear in retrieved excerpts."""
         entities = set(cls._extract_entity_ids(question))
+        doc_entities = {e for e in entities if e.startswith("DOC-")}
+        if doc_entities and any(item.get("document_id") in doc_entities for item in evidence):
+            return True
         searchable = " ".join(
             " ".join(str(item.get(field) or "") for field in (
                 "title", "filename", "content", "related_entity_ids"
@@ -904,7 +950,7 @@ class AnswerComposer:
                 # paraphrased request wording need not appear verbatim in it.
                 facet_terms.update({
                     "campaign", "metric", "metrics", "report", "reported",
-                    "postmortem",
+                    "postmortem", "spend", "revenue", "conversions", "clicks",
                 })
             elif facet == "campaign_observed_drivers":
                 facet_terms.update({
@@ -1041,7 +1087,10 @@ class AnswerComposer:
     def _extract_entity_ids(question: str) -> list[str]:
         return list(
             dict.fromkeys(
-                re.findall(r"\b[A-Z][A-Z0-9]*-\d+\b", question.upper())
+                re.findall(
+                    r"\b(?:(?:DOC|CMP|PROD|SEL|CUST|ORD|RET)-[A-Za-z0-9-]+|[A-Z]+(?:-[A-Z0-9]+)*-\d+)\b",
+                    question.upper(),
+                )
             )
         )
 
@@ -1065,6 +1114,7 @@ class AnswerComposer:
             item.get("evidence_score", item.get("similarity", 0.0))
         )
 
+        doc_id = str(item.get("document_id") or "").upper()
         title = str(item.get("title") or "").upper()
         filename = str(item.get("filename") or "").upper()
         content_upper = content.upper()
@@ -1074,10 +1124,11 @@ class AnswerComposer:
                 score += 0.40
 
             if (
-                cls._contains_entity(title, entity)
+                cls._contains_entity(doc_id, entity)
+                or cls._contains_entity(title, entity)
                 or cls._contains_entity(filename, entity)
             ):
-                score += 0.25
+                score += 0.35
 
         question_terms = set(
             re.findall(r"\b[a-z0-9]+\b", question.lower())
@@ -1139,7 +1190,7 @@ class AnswerComposer:
         if not content or cls._is_metadata_only(content):
             return False
 
-        return len(re.findall(r"\b[\w₹,.-]+\b", content)) >= 8
+        return len(re.findall(r"\b[\w₹,.-]+\b", content)) >= 5
 
     @classmethod
     def _is_metadata_only(cls, content: str) -> bool:

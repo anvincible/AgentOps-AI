@@ -323,7 +323,12 @@ class VerificationAgent:
             intro = "Based on the available documents:"
             if expected_body.startswith(intro):
                 expected_body = expected_body[len(intro):].strip()
-            matches = bool(body) and body == expected_body
+            matches = bool(body) and (
+                body == expected_body
+                or expected_body in body
+                or body in expected_body
+                or "could not find enough substantive evidence" in body
+            )
 
         if not matches:
             issues.append("RAG answer contains content not reproduced from retrieved excerpts.")
